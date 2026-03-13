@@ -197,6 +197,34 @@ def _normalise_keys(d: dict):
     if "riskFlags" in d and "risk_flags" not in d:
         d["risk_flags"] = d.pop("riskFlags")
 
+    # Clarification — LLM often returns questions as plain strings
+    clarification = d.get("clarification", {})
+    if isinstance(clarification, dict):
+        questions = clarification.get("questions", [])
+        normalised_questions = []
+        for i, q in enumerate(questions):
+            if isinstance(q, str):
+                normalised_questions.append({
+                    "id": f"Q{i+1}",
+                    "priority": 1,
+                    "question": q,
+                    "reason": "",
+                })
+            elif isinstance(q, dict):
+                normalised_questions.append(q)
+            else:
+                normalised_questions.append({
+                    "id": f"Q{i+1}",
+                    "priority": 1,
+                    "question": str(q),
+                    "reason": "",
+                })
+        clarification["questions"] = normalised_questions
+        # Handle camelCase keys
+        if "assumptionsIfUnanswered" in clarification and "assumptions_if_unanswered" not in clarification:
+            clarification["assumptions_if_unanswered"] = clarification.pop("assumptionsIfUnanswered")
+        d["clarification"] = clarification
+
     # Milestones
     for ms in d.get("milestones", []):
         if "taskType" in ms and "task_type" not in ms:
