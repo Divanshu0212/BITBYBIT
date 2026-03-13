@@ -11,6 +11,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
@@ -38,6 +39,7 @@ async def list_assigned_projects(
 ):
     result = await db.execute(
         select(Project)
+        .options(selectinload(Project.milestones))
         .where(Project.freelancer_id == user.id)
         .order_by(Project.created_at.desc())
     )
@@ -50,8 +52,13 @@ async def get_project(
     user: Annotated[User, Depends(freelancer_dep)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    project = await db.get(Project, project_id)
-    if not project or project.freelancer_id != user.id:
+    result = await db.execute(
+        select(Project)
+        .options(selectinload(Project.milestones))
+        .where(Project.id == project_id, Project.freelancer_id == user.id)
+    )
+    project = result.scalar_one_or_none()
+    if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found or not assigned to you")
     return ProjectResponse.model_validate(project)
 
@@ -144,7 +151,7 @@ async def submit_work(
         action_taken = f"PAID ({pct}%)"
 
         # Update PFI
-        await _update_freelancer_pfi(db, user.id, project)
+        await _update_freelancer_pfi(db, user.id, project.id)
 
     elif overall_score < 40:
         # Auto-refund
@@ -154,7 +161,7 @@ async def submit_work(
         )
         action_taken = "REFUND_INITIATED"
 
-        await _update_freelancer_pfi(db, user.id, project)
+        await _update_freelancer_pfi(db, user.id, project.id)
     else:
         # 40-60 range: push to HITL queue
         hitl = HITLQueue(
@@ -175,9 +182,12 @@ async def submit_work(
     }
 
 
-async def _update_freelancer_pfi(db: AsyncSession, user_id: uuid.UUID, project: Project):
+async def _update_freelancer_pfi(db: AsyncSession, user_id: uuid.UUID, project_id: uuid.UUID):
     """Recalculate freelancer PFI after milestone completion."""
-    milestones = list(project.milestones)
+    ms_result = await db.execute(
+        select(Milestone).where(Milestone.project_id == project_id)
+    )
+    milestones = ms_result.scalars().all()
     terminal = {"PAID_FULL", "PAID_PARTIAL", "REFUND_INITIATED"}
     resolved = [m for m in milestones if m.status in terminal]
 

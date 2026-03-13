@@ -10,6 +10,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, func
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
@@ -51,7 +52,12 @@ async def create_project(
     )
     db.add(project)
     await db.flush()
-    return ProjectResponse.model_validate(project)
+    created = await db.execute(
+        select(Project)
+        .options(selectinload(Project.milestones))
+        .where(Project.id == project.id)
+    )
+    return ProjectResponse.model_validate(created.scalar_one())
 
 
 @router.get("/projects", response_model=list[ProjectResponse])
@@ -61,6 +67,7 @@ async def list_projects(
 ):
     result = await db.execute(
         select(Project)
+        .options(selectinload(Project.milestones))
         .where(Project.employer_id == user.id)
         .order_by(Project.created_at.desc())
     )
@@ -73,8 +80,13 @@ async def get_project(
     user: Annotated[User, Depends(employer_dep)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    project = await db.get(Project, project_id)
-    if not project or project.employer_id != user.id:
+    result = await db.execute(
+        select(Project)
+        .options(selectinload(Project.milestones))
+        .where(Project.id == project_id, Project.employer_id == user.id)
+    )
+    project = result.scalar_one_or_none()
+    if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
     return ProjectResponse.model_validate(project)
 
@@ -131,9 +143,13 @@ async def decompose_project(
         db.add(ms)
 
     await db.flush()
-    # Re-fetch to get milestones
-    await db.refresh(project)
-    return ProjectResponse.model_validate(project)
+    # Re-fetch with milestones eagerly loaded for safe serialization
+    refreshed = await db.execute(
+        select(Project)
+        .options(selectinload(Project.milestones))
+        .where(Project.id == project.id)
+    )
+    return ProjectResponse.model_validate(refreshed.scalar_one())
 
 
 # ── Funding ──────────────────────────────────────────────────────────────
@@ -164,8 +180,12 @@ async def fund_project(
     project.budget = data.amount
     project.status = "funded"
     await db.flush()
-    await db.refresh(project)
-    return ProjectResponse.model_validate(project)
+    refreshed = await db.execute(
+        select(Project)
+        .options(selectinload(Project.milestones))
+        .where(Project.id == project.id)
+    )
+    return ProjectResponse.model_validate(refreshed.scalar_one())
 
 
 # ── Freelancer Assignment ────────────────────────────────────────────────
@@ -189,8 +209,12 @@ async def assign_freelancer(
     project.freelancer_id = freelancer_id
     project.status = "active" if project.status == "funded" else project.status
     await db.flush()
-    await db.refresh(project)
-    return ProjectResponse.model_validate(project)
+    refreshed = await db.execute(
+        select(Project)
+        .options(selectinload(Project.milestones))
+        .where(Project.id == project.id)
+    )
+    return ProjectResponse.model_validate(refreshed.scalar_one())
 
 
 # ── HITL Resolution ──────────────────────────────────────────────────────

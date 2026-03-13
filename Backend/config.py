@@ -20,10 +20,17 @@ class Settings:
     PAYMENT_HMAC_SECRET: str = os.getenv("PAYMENT_HMAC_SECRET", "change-me-in-production")
 
     CORS_ORIGINS: list[str] = [
-        "http://localhost:5173",
-        "http://localhost:3000",
-        "http://127.0.0.1:5173",
+        origin.strip()
+        for origin in os.getenv(
+            "CORS_ORIGINS",
+            "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:3000",
+        ).split(",")
+        if origin.strip()
     ]
+    CORS_ORIGIN_REGEX: str = os.getenv(
+        "CORS_ORIGIN_REGEX",
+        r"https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+    )
 
 
 settings = Settings()
