@@ -492,6 +492,7 @@ export default function FreelancerDashboard({ state, dispatch, mode = 'browse' }
             <div className="fms-header">
               <span className="ms-index">M{i + 1}</span>
               <h4>{ms.title}</h4>
+              {ms.task_type && <span className={`task-type-badge ${ms.task_type}`}>{ms.task_type}</span>}
               <span className={`status-badge ${statusClass(ms.status)}`}>
                 {statusIcon(ms.status)} {ms.status.replace(/_/g, ' ')}
               </span>

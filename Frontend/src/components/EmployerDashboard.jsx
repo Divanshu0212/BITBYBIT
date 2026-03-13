@@ -377,6 +377,7 @@ export default function EmployerDashboard({ state, dispatch }) {
                       <span className="ms-index">M{i + 1}</span>
                       <h4>{ms.title}</h4>
                       <span className="domain-tag">{ms.domain}</span>
+                      {ms.task_type && <span className={`task-type-badge ${ms.task_type}`}>{ms.task_type}</span>}
                     </div>
                     <p className="ms-desc">{ms.description}</p>
                     <div className="ms-meta">
@@ -601,6 +602,7 @@ export default function EmployerDashboard({ state, dispatch }) {
                 <div className="ms-card-header">
                   <span className="ms-index">M{i + 1}</span>
                   <h4>{ms.title}</h4>
+                  {ms.task_type && <span className={`task-type-badge ${ms.task_type}`}>{ms.task_type}</span>}
                   <span className={`status-badge status-${ms.status === 'PAID_FULL' ? 'success' : ms.status === 'REFUND_INITIATED' ? 'danger' : 'active'}`}>
                     {ms.status.replace(/_/g, ' ')}
                   </span>

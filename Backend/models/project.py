@@ -27,6 +27,7 @@ class Project(Base):
     risk_level: Mapped[str | None] = mapped_column(String(20), nullable=True)
     total_estimated_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     decomposition: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    project_type: Mapped[str | None] = mapped_column(String(20), nullable=True)  # code|content|design|mixed
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -52,6 +53,9 @@ class Milestone(Base):
     estimated_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     complexity_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
     acceptance_criteria: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    task_type: Mapped[str | None] = mapped_column(String(20), nullable=True)  # code|content|design|mixed
+    scoring_weights: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    verification_profile: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     status: Mapped[str] = mapped_column(
         String(50), default="PENDING", nullable=False
     )  # PENDING, IN_PROGRESS, WORK_SUBMITTED, AQA_REVIEW, PAID_FULL, PAID_PARTIAL, REFUND_INITIATED

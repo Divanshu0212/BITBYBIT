@@ -2296,3 +2296,252 @@ a:hover { text-decoration: underline; }
 .animate-slide-up {
   animation: slideUp 0.35s ease;
 }
+
+/* ============================================
+   AAPPA VERIFICATION — Enhanced AQA Report
+   ============================================ */
+
+/* Modality / Confidence / Evidence Row */
+.aqa-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.modality-badge {
+  background: linear-gradient(135deg, var(--cyan-dim), var(--blue));
+  color: var(--text);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+}
+
+.confidence-high {
+  background: #00E67618;
+  border: 1px solid #00E67640;
+  color: var(--green);
+}
+
+.confidence-moderate {
+  background: #FFD60018;
+  border: 1px solid #FFD60040;
+  color: var(--yellow);
+}
+
+.confidence-low {
+  background: #FF525218;
+  border: 1px solid #FF525240;
+  color: var(--red);
+}
+
+/* Evidence bar */
+.evidence-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.evidence-label {
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.evidence-bar {
+  width: 80px;
+  height: 6px;
+  background: var(--surface-alt);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.evidence-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+
+.evidence-pct {
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+/* Score split section */
+.score-split-section {
+  background: var(--surface-alt);
+  border-radius: var(--radius);
+  padding: 12px;
+  margin: 12px 0;
+}
+
+.score-split-section h6 {
+  color: var(--cyan);
+  margin-bottom: 10px;
+  font-size: 12px;
+}
+
+.score-split-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.score-split-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.score-split-label {
+  font-size: 10px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.score-split-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.score-split-key {
+  font-size: 10px;
+  color: var(--muted);
+  min-width: 80px;
+  text-transform: capitalize;
+}
+
+.score-split-val {
+  font-size: 10px;
+  min-width: 20px;
+  text-align: right;
+}
+
+.crit-bar.mini {
+  height: 4px;
+  flex: 1;
+}
+
+/* Evidence indicator on criteria */
+.evidence-indicator {
+  font-size: 12px;
+  margin: 0 4px;
+}
+
+.evidence-indicator.has-evidence { opacity: 1; }
+.evidence-indicator.no-evidence { opacity: 0.5; }
+
+/* Remediation */
+.remediation-section {
+  background: var(--surface-alt);
+  border-radius: var(--radius);
+  padding: 12px;
+  margin: 12px 0;
+  border-left: 3px solid var(--yellow);
+}
+
+.remediation-section h6 {
+  color: var(--yellow);
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.remediation-list {
+  list-style: none;
+  padding-left: 0;
+}
+
+.remediation-item {
+  position: relative;
+  padding-left: 20px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.remediation-item::before {
+  content: '☐';
+  position: absolute;
+  left: 0;
+  color: var(--yellow);
+}
+
+/* Risk flags */
+.risk-flags-section {
+  margin: 12px 0;
+}
+
+.risk-flags-section h6 {
+  color: var(--orange);
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.risk-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.risk-flag-badge {
+  background: #FF910015;
+  border: 1px solid #FF910030;
+  color: var(--orange);
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+}
+
+/* Decision info */
+.decision-info {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.decision-info .meta-tag {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+/* Task type badge on milestone cards */
+.task-type-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.task-type-badge.code {
+  background: #3A86FF18;
+  border: 1px solid #3A86FF40;
+  color: var(--blue);
+}
+
+.task-type-badge.content {
+  background: #B388FF18;
+  border: 1px solid #B388FF40;
+  color: var(--purple);
+}
+
+.task-type-badge.design {
+  background: #FF910018;
+  border: 1px solid #FF910040;
+  color: var(--orange);
+}
+
+.task-type-badge.mixed {
+  background: #00D4FF18;
+  border: 1px solid #00D4FF40;
+  color: var(--cyan);
+}
+

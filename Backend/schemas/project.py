@@ -23,6 +23,9 @@ class MilestoneResponse(BaseModel):
     estimated_days: int | None = None
     complexity_score: int | None = None
     acceptance_criteria: list[str] | None = None
+    task_type: str | None = None
+    scoring_weights: dict | None = None
+    verification_profile: dict | None = None
     status: str
     payment_amount: float
     payment_released: float
@@ -44,6 +47,7 @@ class ProjectResponse(BaseModel):
     risk_level: str | None = None
     total_estimated_days: int | None = None
     decomposition: dict | None = None
+    project_type: str | None = None
     created_at: datetime
     milestones: list[MilestoneResponse] = []
 

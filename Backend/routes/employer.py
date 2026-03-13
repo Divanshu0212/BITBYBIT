@@ -114,32 +114,58 @@ async def decompose_project(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
-    # Update project
+    # Update project with classification
     project.decomposition = result
     project.risk_level = result.get("projectRiskLevel", "Medium")
     project.total_estimated_days = result.get("totalEstimatedDays")
     project.status = "decomposed"
 
+    # Persist project-level classification
+    classification = result.get("project_classification", {})
+    project.project_type = classification.get("primary_type", "mixed")
+
     # Clear old milestones and create new ones
-    await db.execute(
-        select(Milestone).where(Milestone.project_id == project_id)
-    )
-    # Delete existing milestones
     existing = await db.execute(select(Milestone).where(Milestone.project_id == project_id))
     for ms in existing.scalars().all():
         await db.delete(ms)
     await db.flush()
 
+    # Build verification policy from result
+    verification_policy = result.get("global_verification_policy", {})
+
     for i, ms_data in enumerate(result.get("milestones", [])):
+        # Extract structured acceptance criteria
+        raw_criteria = ms_data.get("acceptance_criteria", ms_data.get("acceptanceCriteria", []))
+        # Flatten for storage: keep both structured form in verification_profile and flat strings
+        flat_criteria = []
+        structured_criteria = []
+        for ac in raw_criteria:
+            if isinstance(ac, dict):
+                flat_criteria.append(ac.get("criterion", str(ac)))
+                structured_criteria.append(ac)
+            else:
+                flat_criteria.append(str(ac))
+                structured_criteria.append({"id": f"C{len(structured_criteria)+1}", "criterion": str(ac)})
+
+        # Build verification profile for this milestone
+        v_profile = {
+            "structured_criteria": structured_criteria,
+            "policy": verification_policy,
+            "definition_of_done": ms_data.get("definition_of_done", ""),
+        }
+
         ms = Milestone(
             project_id=project.id,
             index=i,
             title=ms_data.get("title", f"Milestone {i+1}"),
             description=ms_data.get("description"),
-            domain=ms_data.get("domain"),
-            estimated_days=ms_data.get("estimatedDays"),
+            domain=ms_data.get("task_type", ms_data.get("domain", "mixed")),
+            estimated_days=ms_data.get("estimated_days", ms_data.get("estimatedDays")),
             complexity_score=ms_data.get("complexityScore", 5),
-            acceptance_criteria=ms_data.get("acceptanceCriteria", []),
+            acceptance_criteria=flat_criteria,
+            task_type=ms_data.get("task_type", project.project_type),
+            scoring_weights=ms_data.get("scoring_weights"),
+            verification_profile=v_profile,
             status="PENDING",
         )
         db.add(ms)

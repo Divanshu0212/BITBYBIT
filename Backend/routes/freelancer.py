@@ -25,6 +25,7 @@ from schemas.project import ProjectResponse, WorkSubmission, ProposalCreate
 from services import ai as ai_service
 from services import escrow as escrow_service
 from services import pfi as pfi_service
+from services import verification_engine
 
 router = APIRouter(prefix="/api/freelancer", tags=["Freelancer"])
 
@@ -282,53 +283,53 @@ async def submit_work(
     # 2. Move to AQA review
     await escrow_service.set_aqa_review(db, escrow.id, milestone_id)
 
-    # 3. Run AI evaluation
+    # 3. Run verification engine (modality-aware)
     api_key = get_user_api_key(str(user.id))
     full_submission = data.submission_text
     if data.submission_url:
         full_submission += f"\n\nURL: {data.submission_url}"
 
     try:
-        aqa_result = await ai_service.evaluate_submission(
+        aqa_result = await verification_engine.orchestrate_verification(
             milestone_title=milestone.title,
             milestone_domain=milestone.domain or "General",
+            task_type=milestone.task_type,
             acceptance_criteria=milestone.acceptance_criteria or [],
+            scoring_weights=milestone.scoring_weights,
             submission=full_submission,
             api_key=api_key,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"AQA evaluation failed: {exc}")
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Verification failed: {exc}")
 
     # Store AQA result
     await db.refresh(milestone)
     milestone.aqa_result = aqa_result
 
-    # 4. Auto-action based on score
-    overall_score = aqa_result.get("overallScore", 0)
+    # 4. Action based on verification engine decision
+    decision = aqa_result.get("decision", {})
+    action = decision.get("action", "HITL")
     action_taken = ""
 
-    if overall_score >= 60:
-        # Auto-pay
-        pct = 100 if aqa_result.get("paymentRecommendation") == "FULL_RELEASE" else (
-            aqa_result.get("proRatedPercentage", aqa_result.get("percentComplete", 60))
-        )
+    if action == "FULL_PAY":
+        await escrow_service.release_payment(db, escrow.id, milestone_id, 100)
+        action_taken = "PAID (100%)"
+        await _update_freelancer_pfi(db, user.id, project.id)
+
+    elif action == "PARTIAL_PAY":
+        pct = decision.get("recommended_pct", 50)
         await escrow_service.release_payment(db, escrow.id, milestone_id, pct)
         action_taken = f"PAID ({pct}%)"
-
-        # Update PFI
         await _update_freelancer_pfi(db, user.id, project.id)
 
-    elif overall_score < 40:
-        # Auto-refund
-        await escrow_service.initiate_refund(
-            db, escrow.id, milestone_id,
-            f"AQA score: {overall_score}/100 — {aqa_result.get('completionStatus', 'UNMET')}"
-        )
+    elif action == "REFUND":
+        reason = decision.get("reason", "Score below minimum threshold")
+        await escrow_service.initiate_refund(db, escrow.id, milestone_id, reason)
         action_taken = "REFUND_INITIATED"
-
         await _update_freelancer_pfi(db, user.id, project.id)
+
     else:
-        # 40-60 range: push to HITL queue
+        # HITL — low confidence or insufficient evidence
         hitl = HITLQueue(
             milestone_id=milestone_id,
             project_id=project_id,
