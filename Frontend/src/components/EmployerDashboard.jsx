@@ -87,10 +87,11 @@ export default function EmployerDashboard({ state, dispatch }) {
   const [description, setDescription] = useState('');
   const [budget, setBudget] = useState('');
   const [deadline, setDeadline] = useState('');
-  const [phase, setPhase] = useState('list'); // 'list' | 'create' | 'review' | 'fund' | 'assign'
+  const [phase, setPhase] = useState('list'); // 'list' | 'create' | 'review' | 'fund' | 'proposals' | 'detail'
   const [selectedProject, setSelectedProject] = useState(null);
-  const [freelancerList, setFreelancerList] = useState([]);
+  const [proposals, setProposals] = useState([]);
   const [decomposition, setDecomposition] = useState(null);
+  const [proposalLoading, setProposalLoading] = useState({});
 
   const isLoading = state.loading;
 
@@ -154,7 +155,7 @@ export default function EmployerDashboard({ state, dispatch }) {
     try {
       const project = await api.fundProject(selectedProject.id, parseFloat(budget));
       setSelectedProject(project);
-      setPhase('assign');
+      setPhase('proposals');
       await loadProjects();
     } catch (err) {
       dispatch({ type: ACTIONS.SET_ERROR, payload: { fund: err.message } });
@@ -163,27 +164,40 @@ export default function EmployerDashboard({ state, dispatch }) {
     }
   };
 
-  const handleLoadFreelancers = async () => {
+  const loadProposals = async (projectId) => {
     try {
-      const list = await api.listFreelancers();
-      setFreelancerList(list);
+      const list = await api.listProjectProposals(projectId);
+      setProposals(list);
     } catch (err) {
-      dispatch({ type: ACTIONS.SET_ERROR, payload: { freelancers: err.message } });
+      dispatch({ type: ACTIONS.SET_ERROR, payload: { proposals: err.message } });
     }
   };
 
-  const handleAssign = async (freelancerId) => {
+  const handleAcceptProposal = async (proposalId) => {
     if (!selectedProject) return;
-    dispatch({ type: ACTIONS.SET_LOADING, payload: { assign: true } });
+    setProposalLoading(prev => ({ ...prev, [proposalId]: 'accept' }));
     try {
-      const project = await api.assignFreelancer(selectedProject.id, freelancerId);
+      const project = await api.acceptProposal(selectedProject.id, proposalId);
       setSelectedProject(project);
-      setPhase('list');
+      setPhase('detail');
       await loadProjects();
     } catch (err) {
-      dispatch({ type: ACTIONS.SET_ERROR, payload: { assign: err.message } });
+      dispatch({ type: ACTIONS.SET_ERROR, payload: { proposals: err.message } });
     } finally {
-      dispatch({ type: ACTIONS.SET_LOADING, payload: { assign: false } });
+      setProposalLoading(prev => ({ ...prev, [proposalId]: null }));
+    }
+  };
+
+  const handleRejectProposal = async (proposalId) => {
+    if (!selectedProject) return;
+    setProposalLoading(prev => ({ ...prev, [proposalId]: 'reject' }));
+    try {
+      await api.rejectProposal(selectedProject.id, proposalId);
+      await loadProposals(selectedProject.id);
+    } catch (err) {
+      dispatch({ type: ACTIONS.SET_ERROR, payload: { proposals: err.message } });
+    } finally {
+      setProposalLoading(prev => ({ ...prev, [proposalId]: null }));
     }
   };
 
@@ -196,9 +210,9 @@ export default function EmployerDashboard({ state, dispatch }) {
     } else if (project.status === 'decomposed') {
       setBudget(project.budget ? String(project.budget) : '');
       setPhase('review');
-    } else if (project.status === 'funded') {
-      setPhase('assign');
-      await handleLoadFreelancers();
+    } else if (project.status === 'funded' && !project.freelancer_id) {
+      setPhase('proposals');
+      await loadProposals(project.id);
     } else {
       setPhase('detail');
     }
@@ -213,12 +227,22 @@ export default function EmployerDashboard({ state, dispatch }) {
     active: 'var(--green)', completed: 'var(--green)',
   };
 
-  // Project List View
+  const proposalStatusColor = (s) => ({
+    pending: 'var(--yellow)', accepted: 'var(--green)', rejected: 'var(--red)',
+  }[s] || 'var(--muted)');
+
+  const pfiScoreColor = (s) => {
+    if (s >= 70) return 'var(--green)';
+    if (s >= 40) return 'var(--yellow)';
+    return 'var(--red)';
+  };
+
+  // ── Project List View ─────────────────────────────────────────────────
   if (phase === 'list') {
     return (
       <div className="dashboard-panel">
         <div className="panel-header">
-          <h2>🏢 Employer Dashboard</h2>
+          <h2>🏢 My Projects</h2>
           <button className="btn btn-primary" onClick={() => {
             setPhase('create');
             setDescription('');
@@ -227,7 +251,7 @@ export default function EmployerDashboard({ state, dispatch }) {
             setSelectedProject(null);
             setDecomposition(null);
           }}>
-            + New Project
+            + Post a Project
           </button>
         </div>
 
@@ -239,7 +263,7 @@ export default function EmployerDashboard({ state, dispatch }) {
           <div className="empty-state">
             <div className="empty-icon">📋</div>
             <h3>No Projects Yet</h3>
-            <p>Create your first project and let AI decompose it into actionable milestones.</p>
+            <p>Post your first project and let AI decompose it into milestones. Freelancers will send proposals!</p>
           </div>
         ) : (
           <div className="project-grid">
@@ -260,6 +284,12 @@ export default function EmployerDashboard({ state, dispatch }) {
                   {p.budget && <span className="mono">💰 ${p.budget.toLocaleString()}</span>}
                   {p.total_estimated_days && <span>📅 {p.total_estimated_days}d</span>}
                   <span>📦 {p.milestones?.length || 0} milestones</span>
+                  {p.status === 'funded' && !p.freelancer_id && (
+                    <span style={{ color: 'var(--cyan)' }}>📨 Accepting Proposals</span>
+                  )}
+                  {p.freelancer_id && (
+                    <span style={{ color: 'var(--green)' }}>👤 Freelancer Assigned</span>
+                  )}
                 </div>
               </div>
             ))}
@@ -269,11 +299,16 @@ export default function EmployerDashboard({ state, dispatch }) {
     );
   }
 
-  // Create / Review / Fund / Assign Views
+  // ── Create / Review / Fund / Proposals / Detail Views ─────────────────
   return (
     <div className="dashboard-panel">
       <div className="panel-header">
-        <h2>🏢 {phase === 'create' ? 'New Project' : phase === 'assign' ? 'Assign Freelancer' : 'Project Details'}</h2>
+        <h2>🏢 {
+          phase === 'create' ? 'Post a New Project' :
+          phase === 'proposals' ? 'Review Proposals' :
+          phase === 'detail' ? 'Project Details' :
+          'Project Setup'
+        }</h2>
         <button className="btn btn-ghost" onClick={() => { setPhase('list'); setSelectedProject(null); }}>
           ← Back to Projects
         </button>
@@ -290,7 +325,7 @@ export default function EmployerDashboard({ state, dispatch }) {
                 rows={5}
                 value={description}
                 onChange={e => setDescription(e.target.value)}
-                placeholder="Describe your project in 2-4 sentences..."
+                placeholder="Describe your project requirements in 2-4 sentences. Be specific about deliverables, technologies, and standards..."
                 disabled={selectedProject && selectedProject.status !== 'draft'}
               />
             </div>
@@ -314,7 +349,7 @@ export default function EmployerDashboard({ state, dispatch }) {
                 onClick={handleDecompose}
                 disabled={isLoading.decompose}
               >
-                {isLoading.decompose ? <><span className="spinner" /> Decomposing...</> : '🤖 Decompose with AI'}
+                {isLoading.decompose ? <><span className="spinner" /> AI is analyzing your project...</> : '🤖 Decompose with AI'}
               </button>
             )}
           </div>
@@ -364,7 +399,10 @@ export default function EmployerDashboard({ state, dispatch }) {
               {/* Fund Section */}
               {selectedProject.status === 'decomposed' && (
                 <div className="confirm-section">
-                  <h3>💰 Fund Project</h3>
+                  <h3>💰 Fund Project & Open for Proposals</h3>
+                  <p className="text-muted" style={{ marginBottom: 16 }}>
+                    Once funded, your project will be visible to freelancers who can submit proposals.
+                  </p>
                   <div className="form-grid">
                     <div className="form-group">
                       <label className="input-label">Total Budget (USD) *</label>
@@ -384,7 +422,7 @@ export default function EmployerDashboard({ state, dispatch }) {
                       onClick={handleFund}
                       disabled={!budget || isLoading.fund}
                     >
-                      {isLoading.fund ? <><span className="spinner" /> Funding...</> : '🔒 Lock Funds in Escrow'}
+                      {isLoading.fund ? <><span className="spinner" /> Funding...</> : '🔒 Fund & Publish for Proposals'}
                     </button>
                   </div>
                 </div>
@@ -394,48 +432,148 @@ export default function EmployerDashboard({ state, dispatch }) {
         </>
       )}
 
-      {/* Assign Freelancer Phase */}
-      {phase === 'assign' && selectedProject && (
+      {/* ── Proposals Phase ─────────────────────────────────────────────── */}
+      {phase === 'proposals' && selectedProject && (
         <div className="animate-fade-in">
-          <div className="success-banner">
+          <div className="success-banner" style={{ marginBottom: 24 }}>
             <div className="success-icon">💰</div>
             <h3>Project Funded — ${selectedProject.budget?.toLocaleString()}</h3>
-            <p>Select a freelancer to assign to this project.</p>
+            <p>Your project is live! Freelancers can now browse and submit proposals. Review them below.</p>
           </div>
 
-          {freelancerList.length === 0 ? (
-            <div className="empty-state">
-              <div className="empty-icon">👥</div>
-              <h3>No Freelancers Available</h3>
-              <p>Register freelancer accounts to see them here.</p>
-              <button className="btn btn-accent" onClick={handleLoadFreelancers}>
-                🔄 Refresh List
+          {/* Project summary mini */}
+          <div className="project-summary-mini">
+            <p className="project-desc">{selectedProject.description.length > 200 ? selectedProject.description.slice(0, 200) + '…' : selectedProject.description}</p>
+            <div className="project-card-footer">
+              {selectedProject.total_estimated_days && <span>📅 {selectedProject.total_estimated_days} days</span>}
+              <span>📦 {selectedProject.milestones?.length || 0} milestones</span>
+              {selectedProject.risk_level && (
+                <span className={`risk-badge risk-${selectedProject.risk_level.toLowerCase()}`}>
+                  {selectedProject.risk_level}
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="proposals-section-header">
+            <h3>📨 Proposals ({proposals.length})</h3>
+            <button className="btn btn-sm btn-ghost" onClick={() => loadProposals(selectedProject.id)}>
+              🔄 Refresh
+            </button>
+          </div>
+
+          {state.errors.proposals && <div className="error-msg">❌ {state.errors.proposals}</div>}
+
+          {proposals.length === 0 ? (
+            <div className="empty-state" style={{ padding: '40px 20px' }}>
+              <div className="empty-icon">📨</div>
+              <h3>No Proposals Yet</h3>
+              <p>Freelancers haven't submitted proposals yet. Your project is listed in their "Find Work" page.</p>
+              <button className="btn btn-accent" onClick={() => loadProposals(selectedProject.id)}>
+                🔄 Check for New Proposals
               </button>
             </div>
           ) : (
-            <div className="freelancer-list">
-              <h3>Available Freelancers</h3>
-              {freelancerList.map(fl => (
-                <div key={fl.id} className="freelancer-card">
-                  <div className="fl-info">
-                    <h4>{fl.name}</h4>
-                    <p className="fl-email">{fl.email}</p>
-                    <div className="fl-skills">
-                      {(fl.skills || []).map((s, i) => (
+            <div className="employer-proposals-list">
+              {proposals.map(prop => (
+                <div key={prop.id} className={`employer-proposal-card proposal-${prop.status}`}>
+                  <div className="ep-header">
+                    <div className="ep-freelancer-info">
+                      <div className="ep-avatar">
+                        {prop.freelancer_name?.[0]?.toUpperCase() || '?'}
+                      </div>
+                      <div className="ep-name-block">
+                        <h4>{prop.freelancer_name || 'Freelancer'}</h4>
+                        <span className="ep-email">{prop.freelancer_email}</span>
+                      </div>
+                    </div>
+                    <div className="ep-badges">
+                      <span className="pfi-mini-badge" style={{
+                        color: pfiScoreColor(prop.freelancer_pfi_score || 50),
+                        borderColor: pfiScoreColor(prop.freelancer_pfi_score || 50),
+                      }}>
+                        PFI: {prop.freelancer_pfi_score || 50}
+                      </span>
+                      <span className="proposal-status-badge" style={{
+                        color: proposalStatusColor(prop.status),
+                        borderColor: proposalStatusColor(prop.status),
+                      }}>
+                        {prop.status === 'pending' ? '⏳' : prop.status === 'accepted' ? '✅' : '❌'} {prop.status.toUpperCase()}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Skills */}
+                  {prop.freelancer_skills && prop.freelancer_skills.length > 0 && (
+                    <div className="ep-skills">
+                      {prop.freelancer_skills.map((s, i) => (
                         <span key={i} className="skill-tag">{s}</span>
                       ))}
                     </div>
-                    {fl.pfi_score !== undefined && (
-                      <span className="pfi-mini-badge">PFI: {fl.pfi_score}</span>
-                    )}
+                  )}
+
+                  {/* Bio */}
+                  {prop.freelancer_bio && (
+                    <p className="ep-bio">{prop.freelancer_bio.length > 120 ? prop.freelancer_bio.slice(0, 120) + '…' : prop.freelancer_bio}</p>
+                  )}
+
+                  {/* Cover Letter */}
+                  <div className="ep-cover-letter">
+                    <strong>Cover Letter:</strong>
+                    <p>{prop.cover_letter}</p>
                   </div>
-                  <button
-                    className="btn btn-primary btn-sm"
-                    onClick={() => handleAssign(fl.id)}
-                    disabled={isLoading.assign}
-                  >
-                    {isLoading.assign ? 'Assigning...' : 'Assign →'}
-                  </button>
+
+                  {/* Bid details */}
+                  <div className="ep-bid-details">
+                    {prop.bid_amount != null && (
+                      <div className="ep-bid-item">
+                        <span className="ep-bid-label">Bid Amount</span>
+                        <span className="ep-bid-value mono">${prop.bid_amount.toLocaleString()}</span>
+                      </div>
+                    )}
+                    {prop.estimated_days != null && (
+                      <div className="ep-bid-item">
+                        <span className="ep-bid-label">Est. Delivery</span>
+                        <span className="ep-bid-value">{prop.estimated_days} days</span>
+                      </div>
+                    )}
+                    <div className="ep-bid-item">
+                      <span className="ep-bid-label">Submitted</span>
+                      <span className="ep-bid-value mono">{new Date(prop.created_at).toLocaleDateString()}</span>
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  {prop.status === 'pending' && (
+                    <div className="ep-actions">
+                      <button
+                        className="btn btn-primary"
+                        onClick={() => handleAcceptProposal(prop.id)}
+                        disabled={!!proposalLoading[prop.id]}
+                      >
+                        {proposalLoading[prop.id] === 'accept'
+                          ? <><span className="spinner" /> Accepting...</>
+                          : '✅ Accept & Assign'
+                        }
+                      </button>
+                      <button
+                        className="btn btn-ghost"
+                        onClick={() => handleRejectProposal(prop.id)}
+                        disabled={!!proposalLoading[prop.id]}
+                      >
+                        {proposalLoading[prop.id] === 'reject'
+                          ? <><span className="spinner" /> Rejecting...</>
+                          : '❌ Decline'
+                        }
+                      </button>
+                    </div>
+                  )}
+
+                  {prop.status === 'accepted' && (
+                    <div className="ep-accepted-banner">
+                      🎉 Proposal accepted — freelancer has been assigned to the project!
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -443,7 +581,7 @@ export default function EmployerDashboard({ state, dispatch }) {
         </div>
       )}
 
-      {/* Detail View */}
+      {/* ── Detail View ─────────────────────────────────────────────────── */}
       {phase === 'detail' && selectedProject && (
         <div className="animate-fade-in">
           <div className="project-detail-header">
@@ -451,6 +589,9 @@ export default function EmployerDashboard({ state, dispatch }) {
               {statusIcon[selectedProject.status]} {selectedProject.status.toUpperCase()}
             </span>
             {selectedProject.budget && <span className="mono">💰 ${selectedProject.budget.toLocaleString()}</span>}
+            {selectedProject.freelancer_id && (
+              <span style={{ color: 'var(--green)', fontSize: '12px' }}>👤 Freelancer Assigned</span>
+            )}
           </div>
           <p className="project-desc">{selectedProject.description}</p>
 
