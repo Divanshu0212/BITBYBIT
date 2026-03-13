@@ -1,11 +1,6 @@
-import React from 'react';
-import {
-  calculateBaseScore,
-  applyGlicko2,
-  computeFinalPFI,
-  getConfidenceLabel,
-  getRiskLabel,
-} from '../pfiCalculator';
+import React, { useEffect, useState } from 'react';
+import { ACTIONS } from '../store/actions';
+import * as api from '../api';
 
 function GaugeCircle({ score, size = 100 }) {
   const radius = (size - 12) / 2;
@@ -59,127 +54,170 @@ function Sparkline({ data, width = 120, height = 30 }) {
   );
 }
 
-export default function PFIDashboard({ state }) {
-  const { freelancers, pfiScores, aqaResults, escrow } = state;
+export default function PFIDashboard({ state, dispatch, mode = 'self' }) {
+  const [loading, setLoading] = useState(false);
+  const isFreelancer = state.user?.role === 'freelancer';
 
-  // Build freelancer PFI data dynamically
-  const pfiData = freelancers.map(fl => {
-    const scores = pfiScores[fl.id] || {};
-    const aqaScoresArr = Object.values(aqaResults).map(r => r.overallScore).filter(Boolean);
+  useEffect(() => {
+    if (mode === 'self' && isFreelancer) {
+      loadOwnPFI();
+    }
+    if (mode === 'leaderboard') {
+      loadLeaderboard();
+    }
+  }, [mode]);
 
-    const history = {
-      completedMilestones: escrow?.milestones?.filter(m =>
-        ['PAID_FULL', 'PAID_PARTIAL'].includes(m.status)
-      ).length || 0,
-      totalMilestones: escrow?.milestones?.length || 1,
-      onTimeDeliveries: escrow?.milestones?.filter(m =>
-        ['PAID_FULL'].includes(m.status)
-      ).length || 0,
-      totalDeliveries: escrow?.milestones?.filter(m =>
-        ['PAID_FULL', 'PAID_PARTIAL', 'REFUND_INITIATED'].includes(m.status)
-      ).length || 0,
-      aqaScores: aqaScoresArr,
-      disputes: escrow?.milestones?.filter(m =>
-        m.status === 'REFUND_INITIATED'
-      ).length || 0,
-      totalJobs: escrow?.milestones?.filter(m =>
-        m.status !== 'PENDING'
-      ).length || 0,
-    };
+  const loadOwnPFI = async () => {
+    setLoading(true);
+    try {
+      const [score, history] = await Promise.all([
+        api.getOwnPFI(),
+        api.getOwnPFIHistory(),
+      ]);
+      dispatch({ type: ACTIONS.SET_PFI_SCORE, payload: score });
+      dispatch({ type: ACTIONS.SET_PFI_HISTORY, payload: history });
+    } catch (err) {
+      dispatch({ type: ACTIONS.SET_ERROR, payload: { pfi: err.message } });
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    const baseScore = calculateBaseScore(history);
-    const glicko = applyGlicko2(
-      scores.rating || 1500,
-      scores.RD || 350,
-      scores.volatility || 0.06,
-      aqaScoresArr.map(s => ({ score: s / 100, expected: 0.5 }))
-    );
-    const finalPFI = computeFinalPFI(baseScore, glicko.rating);
-    const confidence = getConfidenceLabel(glicko.RD);
-    const risk = getRiskLabel(finalPFI);
+  const loadLeaderboard = async () => {
+    setLoading(true);
+    try {
+      const data = await api.getLeaderboard();
+      dispatch({ type: ACTIONS.SET_LEADERBOARD, payload: data });
+    } catch (err) {
+      dispatch({ type: ACTIONS.SET_ERROR, payload: { leaderboard: err.message } });
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    return {
-      ...fl,
-      baseScore,
-      glicko,
-      finalPFI,
-      confidence,
-      risk,
-      history: scores.history || aqaScoresArr,
-    };
-  });
-
-  // Sort for leaderboard
-  const sorted = [...pfiData].sort((a, b) => b.finalPFI - a.finalPFI);
-
-  if (freelancers.length === 0) {
+  if (loading) {
     return (
       <div className="dashboard-panel">
-        <div className="panel-header">
-          <h2>📊 PFI Dashboard</h2>
-        </div>
-        <div className="empty-state">
-          <div className="empty-icon">👥</div>
-          <h3>No Freelancers</h3>
-          <p>Generate a demo project to add freelancers, or complete milestones to build PFI scores.</p>
-        </div>
+        <div className="panel-header"><h2>📊 PFI Dashboard</h2></div>
+        <div className="empty-state"><span className="spinner" /> Loading...</div>
       </div>
     );
   }
 
-  return (
-    <div className="dashboard-panel">
-      <div className="panel-header">
-        <h2>📊 Platform Freelancer Index</h2>
-        <p className="panel-subtitle">Glicko-2 powered reputation scoring with bias detection</p>
-      </div>
+  // Self view (freelancer only)
+  if (mode === 'self') {
+    const pfi = state.pfiScore;
+    const history = state.pfiHistory || [];
 
-      <div className="pfi-cards">
-        {pfiData.map(fl => (
-          <div key={fl.id} className="pfi-card">
+    if (!pfi) {
+      return (
+        <div className="dashboard-panel">
+          <div className="panel-header"><h2>📊 My PFI Score</h2></div>
+          <div className="empty-state">
+            <div className="empty-icon">📊</div>
+            <h3>No PFI Data</h3>
+            <p>Complete milestones to build your Professional Fidelity Index.</p>
+          </div>
+        </div>
+      );
+    }
+
+    const historyScores = history.map(h => h.score);
+
+    return (
+      <div className="dashboard-panel">
+        <div className="panel-header">
+          <h2>📊 My Professional Fidelity Index</h2>
+          <button className="btn btn-sm btn-ghost" onClick={loadOwnPFI}>🔄 Refresh</button>
+        </div>
+
+        <div className="pfi-cards">
+          <div className="pfi-card pfi-card-main">
             <div className="pfi-card-top">
-              <GaugeCircle score={fl.finalPFI} size={90} />
+              <GaugeCircle score={pfi.score} size={120} />
               <div className="pfi-info">
-                <h4>{fl.name}</h4>
-                <div className="pfi-tags">
-                  {fl.skills?.map((s, i) => (
-                    <span key={i} className="skill-tag">{s}</span>
-                  ))}
-                </div>
-                <span className={`risk-badge risk-${fl.risk.toLowerCase().replace(/\s/g, '-')}`}>
-                  {fl.risk}
+                <h4>{state.user?.name}</h4>
+                <span className={`risk-badge risk-${(pfi.risk || 'moderate-risk').toLowerCase().replace(/\s/g, '-')}`}>
+                  {pfi.risk}
                 </span>
               </div>
             </div>
             <div className="pfi-metrics">
               <div className="metric">
-                <span className="metric-label">Rating</span>
-                <span className="metric-value mono">{fl.glicko.rating}</span>
+                <span className="metric-label">Glicko Rating</span>
+                <span className="metric-value mono">{pfi.rating}</span>
               </div>
               <div className="metric">
-                <span className="metric-label">RD</span>
+                <span className="metric-label">Rating Deviation</span>
                 <div className="rd-bar">
-                  <div className="rd-bar-fill" style={{ width: `${Math.min(fl.glicko.RD / 350 * 100, 100)}%` }} />
+                  <div className="rd-bar-fill" style={{ width: `${Math.min((pfi.rd || 350) / 350 * 100, 100)}%` }} />
                 </div>
-                <span className="metric-sub">{fl.confidence} confidence</span>
+                <span className="metric-sub">{pfi.confidence} confidence</span>
               </div>
               <div className="metric">
                 <span className="metric-label">Volatility</span>
-                <Sparkline data={fl.history} />
+                <span className="metric-value mono">{pfi.volatility}</span>
               </div>
               <div className="metric">
-                <span className="metric-label">Base Score</span>
-                <span className="metric-value mono">{fl.baseScore}</span>
+                <span className="metric-label">Score History</span>
+                <Sparkline data={historyScores} />
               </div>
             </div>
           </div>
-        ))}
+        </div>
+
+        {/* History Table */}
+        {history.length > 0 && (
+          <div className="chart-section">
+            <h3>📜 Score History</h3>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Event</th>
+                  <th>Score</th>
+                  <th>Rating</th>
+                </tr>
+              </thead>
+              <tbody>
+                {history.map((h, i) => (
+                  <tr key={i}>
+                    <td className="mono">{new Date(h.timestamp).toLocaleDateString()}</td>
+                    <td>{h.event_type.replace(/_/g, ' ')}</td>
+                    <td className="mono" style={{ color: h.score >= 60 ? 'var(--green)' : 'var(--red)' }}>{h.score}</td>
+                    <td className="mono">{h.rating}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Leaderboard view (both roles)
+  const sorted = state.leaderboard || [];
+
+  return (
+    <div className="dashboard-panel">
+      <div className="panel-header">
+        <h2>🏆 PFI Leaderboard</h2>
+        <button className="btn btn-sm btn-ghost" onClick={loadLeaderboard}>🔄 Refresh</button>
       </div>
 
-      {/* Leaderboard */}
-      {sorted.length > 0 && (
+      {state.errors.leaderboard && (
+        <div className="error-msg">❌ {state.errors.leaderboard}</div>
+      )}
+
+      {sorted.length === 0 ? (
+        <div className="empty-state">
+          <div className="empty-icon">🏆</div>
+          <h3>No Scores Yet</h3>
+          <p>Freelancers need to complete milestones to appear on the leaderboard.</p>
+        </div>
+      ) : (
         <div className="leaderboard">
-          <h3>🏆 Leaderboard</h3>
           <table className="data-table">
             <thead>
               <tr>
@@ -193,16 +231,18 @@ export default function PFIDashboard({ state }) {
             </thead>
             <tbody>
               {sorted.map((fl, i) => (
-                <tr key={fl.id}>
+                <tr key={fl.user_id}>
                   <td className="mono">{i + 1}</td>
-                  <td>{fl.name}</td>
-                  <td className="mono" style={{ color: fl.finalPFI >= 70 ? 'var(--green)' : fl.finalPFI >= 40 ? 'var(--yellow)' : 'var(--red)' }}>
-                    {fl.finalPFI}
+                  <td>{fl.user_id}</td>
+                  <td className="mono" style={{
+                    color: fl.score >= 70 ? 'var(--green)' : fl.score >= 40 ? 'var(--yellow)' : 'var(--red)'
+                  }}>
+                    {fl.score}
                   </td>
-                  <td className="mono">{fl.glicko.rating}</td>
+                  <td className="mono">{fl.rating}</td>
                   <td>{fl.confidence}</td>
                   <td>
-                    <span className={`risk-badge risk-${fl.risk.toLowerCase().replace(/\s/g, '-')}`}>
+                    <span className={`risk-badge risk-${(fl.risk || 'moderate-risk').toLowerCase().replace(/\s/g, '-')}`}>
                       {fl.risk}
                     </span>
                   </td>

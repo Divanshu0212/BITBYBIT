@@ -1,90 +1,70 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ACTIONS } from '../store/actions';
-import { evaluateSubmission } from '../geminiApi';
-import { EscrowContract } from '../EscrowContract';
+import * as api from '../api';
 import AQAReport from './AQAReport';
 
 export default function FreelancerDashboard({ state, dispatch }) {
   const [selectedMs, setSelectedMs] = useState(null);
   const [submissionText, setSubmissionText] = useState('');
   const [submissionUrl, setSubmissionUrl] = useState('');
+  const [selectedProject, setSelectedProject] = useState(null);
+  const [submissionLoading, setSubmissionLoading] = useState(false);
+  const [submissionResult, setSubmissionResult] = useState(null);
 
-  const escrow = state.escrow;
-  const milestones = escrow?.milestones || [];
+  // Load projects on mount
+  useEffect(() => {
+    loadProjects();
+  }, []);
 
-  if (!escrow) {
-    return (
-      <div className="dashboard-panel">
-        <div className="panel-header">
-          <h2>👩‍💻 Freelancer Dashboard</h2>
-        </div>
-        <div className="empty-state">
-          <div className="empty-icon">📋</div>
-          <h3>No Active Project</h3>
-          <p>An employer needs to create and fund a project first.</p>
-          <button className="btn btn-ghost" onClick={() =>
-            dispatch({ type: ACTIONS.SET_VIEW, payload: 'employer' })
-          }>Go to Employer Dashboard →</button>
-        </div>
-      </div>
-    );
-  }
-
-  const handleActivate = (index) => {
+  const loadProjects = async () => {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { projects: true } });
     try {
-      const contract = EscrowContract.fromJSON(escrow);
-      contract.activateMilestone(index);
-      const newState = contract.getState();
-      dispatch({ type: ACTIONS.SET_ESCROW, payload: newState });
-      dispatch({ type: ACTIONS.APPEND_LEDGER, payload: newState.ledger.slice(state.ledger.length) });
+      const projects = await api.listFreelancerProjects();
+      dispatch({ type: ACTIONS.SET_PROJECTS, payload: projects });
     } catch (err) {
-      dispatch({ type: ACTIONS.SET_ERROR, payload: { freelancer: err.message } });
+      dispatch({ type: ACTIONS.SET_ERROR, payload: { projects: err.message } });
+    } finally {
+      dispatch({ type: ACTIONS.SET_LOADING, payload: { projects: false } });
     }
   };
 
-  const handleSubmitWork = async (index) => {
-    if (!submissionText.trim()) return;
-    const ms = milestones[index];
-    const fullSubmission = submissionText + (submissionUrl ? `\n\nURL: ${submissionUrl}` : '');
-
-    // Update escrow to WORK_SUBMITTED
+  const handleActivate = async (project, milestone) => {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { activate: true } });
     try {
-      let contract = EscrowContract.fromJSON(escrow);
-      contract.submitWork(index, fullSubmission);
-      let newState = contract.getState();
-      dispatch({ type: ACTIONS.SET_ESCROW, payload: newState });
-      dispatch({ type: ACTIONS.APPEND_LEDGER, payload: newState.ledger.slice(state.ledger.length) });
+      await api.activateMilestone(project.id, milestone.id);
+      // Refresh project
+      const updated = await api.getFreelancerProject(project.id);
+      setSelectedProject(updated);
+      await loadProjects();
+    } catch (err) {
+      dispatch({ type: ACTIONS.SET_ERROR, payload: { freelancer: err.message } });
+    } finally {
+      dispatch({ type: ACTIONS.SET_LOADING, payload: { activate: false } });
+    }
+  };
 
-      // Set to AQA_REVIEW
-      contract = EscrowContract.fromJSON(newState);
-      contract.setAqaReview(index);
-      newState = contract.getState();
-      dispatch({ type: ACTIONS.SET_ESCROW, payload: newState });
-      dispatch({ type: ACTIONS.APPEND_LEDGER, payload: newState.ledger.slice(state.ledger.length) });
+  const handleSubmitWork = async (project, milestone) => {
+    if (!submissionText.trim()) return;
+    setSubmissionLoading(true);
+    setSubmissionResult(null);
+    dispatch({ type: ACTIONS.SET_ERROR, payload: { aqa: null } });
 
-      // Call AI evaluation
-      dispatch({ type: ACTIONS.SET_LOADING, payload: { aqa: true } });
-      const aqaResult = await evaluateSubmission(ms, fullSubmission, state.apiKey);
-      dispatch({ type: ACTIONS.SET_AQA_RESULT, payload: { index, result: aqaResult } });
+    try {
+      const result = await api.submitWork(
+        project.id, milestone.id,
+        submissionText, submissionUrl || null
+      );
 
-      // Auto-action based on score
-      contract = EscrowContract.fromJSON(newState);
-      if (aqaResult.overallScore >= 60) {
-        const pct = aqaResult.paymentRecommendation === 'FULL_RELEASE'
-          ? 100 : (aqaResult.proRatedPercentage || aqaResult.percentComplete || 60);
-        contract.releasePayment(index, pct);
-      } else if (aqaResult.overallScore < 40) {
-        contract.initiateRefund(index, `AQA score: ${aqaResult.overallScore}/100 — ${aqaResult.completionStatus}`);
-      } else {
-        // 40-60 range: push to HITL queue
-        dispatch({
-          type: ACTIONS.PUSH_HITL,
-          payload: { milestoneIndex: index, milestone: ms, aqaResult, submission: fullSubmission },
-        });
-      }
-      const finalState = contract.getState();
-      dispatch({ type: ACTIONS.SET_ESCROW, payload: finalState });
-      dispatch({ type: ACTIONS.APPEND_LEDGER, payload: finalState.ledger.slice(state.ledger.length) });
+      setSubmissionResult(result);
+      dispatch({
+        type: ACTIONS.SET_AQA_RESULT,
+        payload: { milestoneId: milestone.id, result: result.aqa_result }
+      });
+
+      // Refresh project
+      const updated = await api.getFreelancerProject(project.id);
+      setSelectedProject(updated);
+      await loadProjects();
 
       setSubmissionText('');
       setSubmissionUrl('');
@@ -92,22 +72,14 @@ export default function FreelancerDashboard({ state, dispatch }) {
     } catch (err) {
       dispatch({ type: ACTIONS.SET_ERROR, payload: { aqa: err.message } });
     } finally {
-      dispatch({ type: ACTIONS.SET_LOADING, payload: { aqa: false } });
+      setSubmissionLoading(false);
     }
   };
 
-  const statusIcon = (status) => {
-    const icons = {
-      PENDING: '⏳',
-      IN_PROGRESS: '🔨',
-      WORK_SUBMITTED: '📤',
-      AQA_REVIEW: '🔍',
-      PAID_FULL: '✅',
-      PAID_PARTIAL: '⚠️',
-      REFUND_INITIATED: '🔄',
-    };
-    return icons[status] || '📌';
-  };
+  const statusIcon = (status) => ({
+    PENDING: '⏳', IN_PROGRESS: '🔨', WORK_SUBMITTED: '📤',
+    AQA_REVIEW: '🔍', PAID_FULL: '✅', PAID_PARTIAL: '⚠️', REFUND_INITIATED: '🔄',
+  }[status] || '📌');
 
   const statusClass = (status) => {
     if (['PAID_FULL'].includes(status)) return 'status-success';
@@ -117,25 +89,79 @@ export default function FreelancerDashboard({ state, dispatch }) {
     return 'status-pending';
   };
 
+  // Project list view
+  if (!selectedProject) {
+    return (
+      <div className="dashboard-panel">
+        <div className="panel-header">
+          <h2>👩‍💻 Freelancer Dashboard</h2>
+        </div>
+
+        {state.errors.projects && <div className="error-msg">❌ {state.errors.projects}</div>}
+
+        {state.projects.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-icon">📋</div>
+            <h3>No Assigned Projects</h3>
+            <p>An employer needs to create a project and assign you to it.</p>
+          </div>
+        ) : (
+          <div className="project-grid">
+            {state.projects.map(p => (
+              <div key={p.id} className="project-card" onClick={() => setSelectedProject(p)}>
+                <div className="project-card-header">
+                  <span className="project-status" style={{
+                    color: p.status === 'active' ? 'var(--green)' : p.status === 'completed' ? 'var(--cyan)' : 'var(--yellow)'
+                  }}>
+                    {p.status === 'active' ? '🔨' : p.status === 'completed' ? '✅' : '💰'} {p.status.toUpperCase()}
+                  </span>
+                </div>
+                <p className="project-desc">
+                  {p.description.length > 120 ? p.description.slice(0, 120) + '…' : p.description}
+                </p>
+                <div className="project-card-footer">
+                  {p.budget && <span className="mono">💰 ${p.budget.toLocaleString()}</span>}
+                  <span>📦 {p.milestones?.length || 0} milestones</span>
+                  {p.milestones && (
+                    <span className="mono">
+                      {p.milestones.filter(m => ['PAID_FULL', 'PAID_PARTIAL'].includes(m.status)).length}/{p.milestones.length} done
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Project detail view
+  const milestones = selectedProject.milestones || [];
+
   return (
     <div className="dashboard-panel">
       <div className="panel-header">
-        <h2>👩‍💻 Freelancer Dashboard</h2>
-        <p className="panel-subtitle">
-          Project: {escrow.projectId} • Freelancer: {escrow.freelancerId}
-        </p>
+        <h2>👩‍💻 Project Work</h2>
+        <button className="btn btn-ghost" onClick={() => { setSelectedProject(null); setSubmissionResult(null); }}>
+          ← Back to Projects
+        </button>
       </div>
 
-      {state.errors.freelancer && (
-        <div className="error-msg">❌ {state.errors.freelancer}</div>
-      )}
-      {state.errors.aqa && (
-        <div className="error-msg">❌ {state.errors.aqa}</div>
+      {state.errors.freelancer && <div className="error-msg">❌ {state.errors.freelancer}</div>}
+      {state.errors.aqa && <div className="error-msg">❌ {state.errors.aqa}</div>}
+
+      {/* Last submission result */}
+      {submissionResult && (
+        <div className={`success-banner animate-fade-in ${submissionResult.action_taken.includes('REFUND') ? 'banner-danger' : ''}`}>
+          <h3>Submission Result: {submissionResult.action_taken}</h3>
+          <p>Milestone status: {submissionResult.milestone_status}</p>
+        </div>
       )}
 
       <div className="milestone-list">
         {milestones.map((ms, i) => (
-          <div key={i} className={`freelancer-ms-card ${statusClass(ms.status)}`}>
+          <div key={ms.id} className={`freelancer-ms-card ${statusClass(ms.status)}`}>
             <div className="fms-header">
               <span className="ms-index">M{i + 1}</span>
               <h4>{ms.title}</h4>
@@ -146,13 +172,16 @@ export default function FreelancerDashboard({ state, dispatch }) {
             <div className="fms-body">
               <div className="fms-meta">
                 <span className="domain-tag">{ms.domain}</span>
-                <span className="mono">💵 ${ms.paymentAmount?.toLocaleString()}</span>
-                <span>⏱ {ms.estimatedDays} days</span>
+                <span className="mono">💵 ${ms.payment_amount?.toLocaleString()}</span>
+                <span>⏱ {ms.estimated_days} days</span>
+                {ms.payment_released > 0 && (
+                  <span className="mono" style={{ color: 'var(--green)' }}>💸 ${ms.payment_released.toLocaleString()} released</span>
+                )}
               </div>
               <div className="criteria-list">
                 <strong>Acceptance Criteria:</strong>
                 <ul>
-                  {(ms.acceptanceCriteria || []).map((c, j) => (
+                  {(ms.acceptance_criteria || []).map((c, j) => (
                     <li key={j}>{c}</li>
                   ))}
                 </ul>
@@ -161,19 +190,21 @@ export default function FreelancerDashboard({ state, dispatch }) {
 
             <div className="fms-actions">
               {ms.status === 'PENDING' && (
-                <button className="btn btn-accent" onClick={() => handleActivate(i)}>
-                  ▶ Activate Milestone
+                <button className="btn btn-accent"
+                  onClick={() => handleActivate(selectedProject, ms)}
+                  disabled={state.loading.activate}>
+                  {state.loading.activate ? <><span className="spinner" /> Activating...</> : '▶ Activate Milestone'}
                 </button>
               )}
               {ms.status === 'IN_PROGRESS' && (
-                <button className="btn btn-primary" onClick={() => setSelectedMs(i)}>
+                <button className="btn btn-primary" onClick={() => setSelectedMs(ms.id)}>
                   📝 Submit Work
                 </button>
               )}
             </div>
 
             {/* Submission Form */}
-            {selectedMs === i && ms.status === 'IN_PROGRESS' && (
+            {selectedMs === ms.id && ms.status === 'IN_PROGRESS' && (
               <div className="submission-form animate-fade-in">
                 <h5>Submit Work for Review</h5>
                 <textarea
@@ -194,18 +225,18 @@ export default function FreelancerDashboard({ state, dispatch }) {
                   <button className="btn btn-ghost" onClick={() => setSelectedMs(null)}>Cancel</button>
                   <button
                     className="btn btn-primary"
-                    onClick={() => handleSubmitWork(i)}
-                    disabled={!submissionText.trim() || state.loading.aqa}
+                    onClick={() => handleSubmitWork(selectedProject, ms)}
+                    disabled={!submissionText.trim() || submissionLoading}
                   >
-                    {state.loading.aqa ? <><span className="spinner" /> Running AQA Analysis...</> : '🚀 Submit for AQA Review'}
+                    {submissionLoading ? <><span className="spinner" /> Running AQA Analysis...</> : '🚀 Submit for AQA Review'}
                   </button>
                 </div>
               </div>
             )}
 
             {/* AQA Results */}
-            {state.aqaResults[i] && (
-              <AQAReport result={state.aqaResults[i]} milestoneIndex={i} milestone={ms} />
+            {ms.aqa_result && (
+              <AQAReport result={ms.aqa_result} milestoneIndex={i} milestone={ms} />
             )}
           </div>
         ))}

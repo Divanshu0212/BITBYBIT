@@ -1,22 +1,40 @@
-// actions.js — All action type constants. No magic strings elsewhere.
-
+// actions.js — All action type constants
 export const ACTIONS = {
-  SET_API_KEY:       'SET_API_KEY',
+  // Auth
+  SET_USER:          'SET_USER',
+  SET_TOKEN:         'SET_TOKEN',
+  LOGOUT:            'LOGOUT',
+
+  // Navigation
   SET_VIEW:          'SET_VIEW',
-  SET_MILESTONES:    'SET_MILESTONES',
-  SET_PROJECT:       'SET_PROJECT',
+
+  // Projects
+  SET_PROJECTS:      'SET_PROJECTS',
+  SET_CURRENT_PROJECT: 'SET_CURRENT_PROJECT',
+
+  // Escrow / Ledger
   SET_ESCROW:        'SET_ESCROW',
-  APPEND_LEDGER:     'APPEND_LEDGER',
+  SET_LEDGER:        'SET_LEDGER',
+
+  // AQA
   SET_AQA_RESULT:    'SET_AQA_RESULT',
+
+  // Freelancer list (for employer assignment)
   SET_FREELANCERS:   'SET_FREELANCERS',
+
+  // Loading / Errors
   SET_LOADING:       'SET_LOADING',
   SET_ERROR:         'SET_ERROR',
+
+  // PFI
   SET_PFI_SCORE:     'SET_PFI_SCORE',
+  SET_PFI_HISTORY:   'SET_PFI_HISTORY',
+  SET_LEADERBOARD:   'SET_LEADERBOARD',
+
+  // Employer extras
+  SET_ANALYTICS:     'SET_ANALYTICS',
+  SET_HITL_ITEMS:    'SET_HITL_ITEMS',
   SET_ASSIGN_SCORES: 'SET_ASSIGN_SCORES',
-  PUSH_HITL:         'PUSH_HITL',
-  RESOLVE_HITL:      'RESOLVE_HITL',
-  UPDATE_PFI_CONFIG: 'UPDATE_PFI_CONFIG',
-  SET_DAG:           'SET_DAG',
-  SET_DECOMPOSITION: 'SET_DECOMPOSITION',
+
   RESET_STATE:       'RESET_STATE',
 };

@@ -1,58 +1,41 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { ACTIONS } from '../store/actions';
+import * as api from '../api';
 
-export default function AnalyticsPanel({ state }) {
-  const { escrow, ledger, aqaResults, freelancers, pfiScores } = state;
-  const milestones = escrow?.milestones || [];
+export default function AnalyticsPanel({ state, dispatch }) {
+  const [loading, setLoading] = useState(false);
 
-  // --- Summary stats ---
-  const activeProjects = state.projects.length;
-  const totalInEscrow = escrow?.lockedFunds || 0;
-  const aqaScores = Object.values(aqaResults).map(r => r.overallScore).filter(Boolean);
-  const avgAqa = aqaScores.length > 0
-    ? Math.round(aqaScores.reduce((a, b) => a + b, 0) / aqaScores.length)
-    : 0;
+  useEffect(() => {
+    loadAnalytics();
+  }, []);
 
-  // --- Milestone Funnel ---
-  const funnelData = [
-    { label: 'Activated', count: milestones.filter(m => m.status !== 'PENDING').length },
-    { label: 'Submitted', count: milestones.filter(m =>
-      ['WORK_SUBMITTED', 'AQA_REVIEW', 'PAID_FULL', 'PAID_PARTIAL', 'REFUND_INITIATED'].includes(m.status)
-    ).length },
-    { label: 'AQA Passed', count: milestones.filter(m =>
-      ['PAID_FULL', 'PAID_PARTIAL'].includes(m.status)
-    ).length },
-    { label: 'Paid', count: milestones.filter(m =>
-      ['PAID_FULL'].includes(m.status)
-    ).length },
-  ];
-  const maxFunnel = Math.max(...funnelData.map(f => f.count), 1);
-
-  // --- PFI Histogram ---
-  const pfiValues = freelancers.map(fl => {
-    const s = pfiScores[fl.id];
-    return s?.score || 50;
-  });
-  const histBuckets = Array(10).fill(0);
-  pfiValues.forEach(v => {
-    const bucket = Math.min(Math.floor(v / 10), 9);
-    histBuckets[bucket]++;
-  });
-  const maxHist = Math.max(...histBuckets, 1);
-
-  // --- Ledger timeline ---
-  const typeColors = {
-    DEPOSIT: 'var(--cyan)',
-    PAYMENT: 'var(--green)',
-    REFUND: 'var(--red)',
-    STATE_CHANGE: 'var(--muted)',
+  const loadAnalytics = async () => {
+    setLoading(true);
+    try {
+      const data = await api.getEmployerAnalytics();
+      dispatch({ type: ACTIONS.SET_ANALYTICS, payload: data });
+    } catch (err) {
+      dispatch({ type: ACTIONS.SET_ERROR, payload: { analytics: err.message } });
+    } finally {
+      setLoading(false);
+    }
   };
 
-  if (!escrow && ledger.length === 0) {
+  const analytics = state.analytics;
+
+  if (loading) {
     return (
       <div className="dashboard-panel">
-        <div className="panel-header">
-          <h2>📈 Analytics</h2>
-        </div>
+        <div className="panel-header"><h2>📈 Analytics</h2></div>
+        <div className="empty-state"><span className="spinner" /> Loading analytics...</div>
+      </div>
+    );
+  }
+
+  if (!analytics) {
+    return (
+      <div className="dashboard-panel">
+        <div className="panel-header"><h2>📈 Analytics</h2></div>
         <div className="empty-state">
           <div className="empty-icon">📊</div>
           <h3>No Data Yet</h3>
@@ -62,29 +45,45 @@ export default function AnalyticsPanel({ state }) {
     );
   }
 
+  const funnelData = [
+    { label: 'Activated', count: analytics.funnel?.activated || 0 },
+    { label: 'Submitted', count: analytics.funnel?.submitted || 0 },
+    { label: 'AQA Passed', count: analytics.funnel?.aqaPassed || 0 },
+    { label: 'Paid', count: analytics.funnel?.paid || 0 },
+  ];
+  const maxFunnel = Math.max(...funnelData.map(f => f.count), 1);
+
   return (
     <div className="dashboard-panel">
       <div className="panel-header">
         <h2>📈 Analytics</h2>
-        <p className="panel-subtitle">Real-time project metrics — all values computed live from state</p>
+        <button className="btn btn-sm btn-ghost" onClick={loadAnalytics}>🔄 Refresh</button>
       </div>
+
+      {state.errors.analytics && (
+        <div className="error-msg">❌ {state.errors.analytics}</div>
+      )}
 
       {/* Summary Row */}
       <div className="analytics-summary">
         <div className="summary-card">
-          <div className="summary-value mono">{activeProjects}</div>
-          <div className="summary-label">Active Projects</div>
+          <div className="summary-value mono">{analytics.totalProjects}</div>
+          <div className="summary-label">Total Projects</div>
         </div>
         <div className="summary-card">
-          <div className="summary-value mono cyan">${totalInEscrow.toLocaleString()}</div>
+          <div className="summary-value mono cyan">${(analytics.totalInEscrow || 0).toLocaleString()}</div>
           <div className="summary-label">In Escrow</div>
         </div>
         <div className="summary-card">
-          <div className="summary-value mono">{avgAqa}</div>
-          <div className="summary-label">Avg AQA Score</div>
+          <div className="summary-value mono green">${(analytics.totalReleased || 0).toLocaleString()}</div>
+          <div className="summary-label">Released</div>
         </div>
         <div className="summary-card">
-          <div className="summary-value mono">{milestones.length}</div>
+          <div className="summary-value mono red">${(analytics.totalRefunded || 0).toLocaleString()}</div>
+          <div className="summary-label">Refunded</div>
+        </div>
+        <div className="summary-card">
+          <div className="summary-value mono">{analytics.totalMilestones}</div>
           <div className="summary-label">Total Milestones</div>
         </div>
       </div>
@@ -106,49 +105,6 @@ export default function AnalyticsPanel({ state }) {
           ))}
         </div>
       </div>
-
-      {/* PFI Histogram */}
-      {freelancers.length > 0 && (
-        <div className="chart-section">
-          <h3>PFI Score Distribution</h3>
-          <div className="histogram">
-            {histBuckets.map((count, i) => (
-              <div key={i} className="hist-col">
-                <div className="hist-bar"
-                  style={{ height: `${(count / maxHist) * 80}px` }}
-                />
-                <span className="hist-label mono">{i * 10}-{i * 10 + 9}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Escrow Timeline */}
-      {ledger.length > 0 && (
-        <div className="chart-section">
-          <h3>Escrow Timeline</h3>
-          <div className="timeline">
-            {ledger.map((entry, i) => (
-              <div key={i} className="timeline-event">
-                <div className="timeline-dot" style={{ background: typeColors[entry.type] || 'var(--muted)' }} />
-                <div className="timeline-connector" />
-                <div className="timeline-content">
-                  <span className="timeline-label" style={{ color: typeColors[entry.type] }}>
-                    {entry.event}
-                  </span>
-                  {entry.amount != null && (
-                    <span className="timeline-amount mono">${entry.amount.toLocaleString()}</span>
-                  )}
-                  <span className="timeline-time mono">
-                    {new Date(entry.timestamp).toLocaleTimeString()}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

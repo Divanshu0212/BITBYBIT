@@ -16,8 +16,8 @@ from database import get_db
 from middleware.auth import require_role
 from models.project import Milestone, Project
 from models.escrow import EscrowAccount
-from models.pfi import HITLQueue
-from models.user import User
+from models.pfi import HITLQueue, PFIScore
+from models.user import User, FreelancerProfile
 from routes.auth import get_user_api_key
 from schemas.project import (
     DecomposeRequest,
@@ -248,6 +248,72 @@ async def resolve_hitl(
 
     await db.flush()
     return {"status": "resolved", "action": data.action}
+
+
+# ── Freelancer Listing ───────────────────────────────────────────────────
+
+@router.get("/freelancers")
+async def list_freelancers(
+    user: Annotated[User, Depends(employer_dep)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """List all freelancers with their PFI scores for assignment."""
+    result = await db.execute(
+        select(User).where(User.role == "freelancer")
+    )
+    freelancers = result.scalars().all()
+    output = []
+    for fl in freelancers:
+        profile = fl.freelancer_profile
+        # Get PFI score
+        pfi_result = await db.execute(
+            select(PFIScore).where(PFIScore.user_id == fl.id)
+        )
+        pfi = pfi_result.scalar_one_or_none()
+        output.append({
+            "id": str(fl.id),
+            "name": fl.name,
+            "email": fl.email,
+            "skills": profile.skills if profile else [],
+            "bio": profile.bio if profile else None,
+            "pfi_score": pfi.score if pfi else 50,
+            "pfi_rating": pfi.rating if pfi else 1500,
+        })
+    return output
+
+
+# ── HITL Queue for Project ───────────────────────────────────────────────
+
+@router.get("/projects/{project_id}/hitl")
+async def list_hitl_items(
+    project_id: uuid.UUID,
+    user: Annotated[User, Depends(employer_dep)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """List pending HITL items for a specific project."""
+    project = await db.get(Project, project_id)
+    if not project or project.employer_id != user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+
+    result = await db.execute(
+        select(HITLQueue).where(
+            HITLQueue.project_id == project_id,
+            HITLQueue.status == "pending",
+        )
+    )
+    items = result.scalars().all()
+    return [
+        {
+            "id": str(item.id),
+            "milestone_id": str(item.milestone_id),
+            "project_id": str(item.project_id),
+            "aqa_result": item.aqa_result,
+            "submission": item.submission,
+            "status": item.status,
+            "created_at": item.created_at.isoformat(),
+        }
+        for item in items
+    ]
 
 
 # ── Analytics ────────────────────────────────────────────────────────────

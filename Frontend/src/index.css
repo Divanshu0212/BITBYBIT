@@ -1469,4 +1469,426 @@ a:hover { text-decoration: underline; }
   .nav-links { flex-direction: row; }
   .ledger-aside { display: none; }
   .analytics-summary { grid-template-columns: 1fr 1fr; }
+  .auth-container { padding: 20px; }
+  .auth-card { padding: 24px; }
+  .role-selector { flex-direction: column; }
+}
+
+/* ============================================
+   AUTH PAGE
+   ============================================ */
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  position: relative;
+  overflow: auto;
+}
+
+.auth-bg-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(0, 212, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 212, 255, 0.03) 1px, transparent 1px);
+  background-size: 60px 60px;
+  pointer-events: none;
+}
+
+.auth-container {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 460px;
+  padding: 40px 20px;
+}
+
+.auth-header {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.auth-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.auth-logo .logo-icon {
+  font-size: 32px;
+  filter: drop-shadow(0 0 12px var(--cyan));
+}
+
+.auth-logo .logo-text {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 28px;
+  background: var(--grad-cyan);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: 3px;
+}
+
+.auth-tagline {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.auth-card {
+  background: rgba(17, 24, 39, 0.80);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 32px;
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.4),
+    0 0 40px rgba(0, 212, 255, 0.05);
+}
+
+.auth-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 24px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface-alt);
+}
+
+.auth-tab {
+  flex: 1;
+  padding: 10px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.auth-tab.active {
+  background: var(--surface);
+  color: var(--cyan);
+}
+
+.auth-tab:hover:not(.active) {
+  color: var(--text);
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.auth-form .form-group {
+  gap: 6px;
+}
+
+.auth-submit {
+  margin-top: 8px;
+  width: 100%;
+}
+
+/* Role Selector */
+.role-selector {
+  display: flex;
+  gap: 10px;
+}
+
+.role-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 16px 12px;
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.2s;
+  color: var(--text);
+  font-family: var(--font-ui);
+}
+
+.role-btn:hover {
+  border-color: var(--cyan-dim);
+}
+
+.role-btn.active {
+  border-color: var(--cyan);
+  background: rgba(0, 212, 255, 0.05);
+  box-shadow: 0 0 20px rgba(0, 212, 255, 0.1);
+}
+
+.role-icon {
+  font-size: 24px;
+}
+
+.role-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.role-desc {
+  font-size: 10px;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* Auth Features */
+.auth-features {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+  margin-top: 28px;
+  flex-wrap: wrap;
+}
+
+.auth-feature {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.feature-icon {
+  font-size: 14px;
+}
+
+/* ============================================
+   USER INFO (Header)
+   ============================================ */
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.user-role-badge {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--cyan);
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.user-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.sidebar-user-mini {
+  padding: 8px;
+  background: var(--surface);
+  border-radius: var(--radius);
+}
+
+.mini-email {
+  font-size: 10px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ============================================
+   PROJECT GRID
+   ============================================ */
+.project-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+.project-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.project-card:hover {
+  border-color: var(--cyan-dim);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  transform: translateY(-2px);
+}
+
+.project-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.project-status {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.project-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: 14px;
+}
+
+.project-card-footer {
+  display: flex;
+  gap: 14px;
+  font-size: 11px;
+  color: var(--muted);
+  flex-wrap: wrap;
+}
+
+.project-detail-header {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+/* ============================================
+   FREELANCER LIST (Assignment)
+   ============================================ */
+.freelancer-list {
+  margin-top: 20px;
+}
+
+.freelancer-list h3 {
+  font-size: 16px;
+  margin-bottom: 14px;
+}
+
+.freelancer-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: border-color 0.2s;
+}
+
+.freelancer-card:hover {
+  border-color: var(--cyan-dim);
+}
+
+.fl-info h4 {
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.fl-email {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.fl-skills {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.pfi-mini-badge {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--cyan);
+  background: rgba(0, 212, 255, 0.1);
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+.ms-aqa-mini {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 6px;
+}
+
+/* ============================================
+   INTEGRITY BADGE
+   ============================================ */
+.integrity-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 20px;
+  margin-top: 8px;
+}
+
+.integrity-badge.valid {
+  background: #00E67615;
+  color: var(--green);
+}
+
+.integrity-badge.invalid {
+  background: #FF525215;
+  color: var(--red);
+}
+
+.ledger-select {
+  width: 100%;
+  margin-bottom: 8px;
+  font-size: 11px;
+  padding: 6px 8px;
+}
+
+/* ============================================
+   SUCCESS BANNER VARIANTS
+   ============================================ */
+.success-banner.banner-danger {
+  border-color: var(--red);
+}
+
+.success-banner.banner-danger h3 {
+  color: var(--red);
+}
+
+/* ============================================
+   PFI CARD MAIN (Self view)
+   ============================================ */
+.pfi-card-main {
+  grid-column: 1 / -1;
+}
+
+/* ============================================
+   ANALYTICS SUMMARY - 5 cols
+   ============================================ */
+.analytics-summary {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.summary-value.green { color: var(--green); }
+.summary-value.red { color: var(--red); }
+
+/* ============================================
+   PANEL HEADER FLEX
+   ============================================ */
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
 }

@@ -1,100 +1,74 @@
-import React, { useReducer, useEffect, useState } from 'react';
+import React, { useReducer, useEffect } from 'react';
 import { reducer, initialState } from './store/reducer';
 import { ACTIONS } from './store/actions';
+import { clearAuth, getToken } from './api';
 
-import SettingsModal from './components/SettingsModal';
+import AuthPage from './components/AuthPage';
 import EscrowLedger from './components/EscrowLedger';
 import EmployerDashboard from './components/EmployerDashboard';
 import FreelancerDashboard from './components/FreelancerDashboard';
 import PFIDashboard from './components/PFIDashboard';
 import AnalyticsPanel from './components/AnalyticsPanel';
-import AgentScorer from './components/AgentScorer';
 import HITLOverride from './components/HITLOverride';
 
-const STORAGE_KEY = 'bitbybit_state';
-
-function loadInitialState() {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      return { ...initialState, ...parsed };
-    }
-  } catch { /* ignore */ }
-  // Also check for API key
-  const apiKey = localStorage.getItem('bitbybit_api_key');
-  if (apiKey) return { ...initialState, apiKey };
-  return initialState;
-}
-
 export default function App() {
-  const [state, dispatch] = useReducer(reducer, null, loadInitialState);
-  const [showSettings, setShowSettings] = useState(!state.apiKey);
+  const [state, dispatch] = useReducer(reducer, initialState);
 
-  // Persist state to localStorage
-  useEffect(() => {
-    const { loading, errors, ...persistable } = state;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(persistable));
-  }, [state]);
+  const isLoggedIn = !!state.token && !!state.user;
+  const isEmployer = state.user?.role === 'employer';
+  const isFreelancer = state.user?.role === 'freelancer';
 
-  // Sync apiKey changes
+  // Set default view based on role
   useEffect(() => {
-    if (state.apiKey) {
-      localStorage.setItem('bitbybit_api_key', state.apiKey);
-      setShowSettings(false);
+    if (isLoggedIn) {
+      dispatch({ type: ACTIONS.SET_VIEW, payload: 'projects' });
     }
-  }, [state.apiKey]);
+  }, [isLoggedIn]);
 
-  const NAV_ITEMS = [
-    { key: 'employer', icon: '🏢', label: 'Employer' },
-    { key: 'freelancer', icon: '👩‍💻', label: 'Freelancer' },
-    { key: 'pfi', icon: '📊', label: 'PFI Index' },
-    { key: 'analytics', icon: '📈', label: 'Analytics' },
-  ];
-
-  const handleExport = () => {
-    const data = JSON.stringify(state, null, 2);
-    const blob = new Blob([data], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `bitbybit-export-${Date.now()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const handleLogout = () => {
+    clearAuth();
+    dispatch({ type: ACTIONS.LOGOUT });
   };
 
-  const handleReset = () => {
-    if (confirm('Reset all project data? Your API key will be preserved.')) {
-      dispatch({ type: ACTIONS.RESET_STATE });
-    }
-  };
+  if (!isLoggedIn) {
+    return <AuthPage dispatch={dispatch} />;
+  }
+
+  const NAV_ITEMS = isEmployer
+    ? [
+        { key: 'projects', icon: '🏢', label: 'Projects' },
+        { key: 'analytics', icon: '📈', label: 'Analytics' },
+        { key: 'leaderboard', icon: '🏆', label: 'PFI Leaderboard' },
+      ]
+    : [
+        { key: 'projects', icon: '👩‍💻', label: 'My Projects' },
+        { key: 'pfi', icon: '📊', label: 'My PFI Score' },
+        { key: 'leaderboard', icon: '🏆', label: 'PFI Leaderboard' },
+      ];
 
   const renderActiveView = () => {
     switch (state.activeView) {
-      case 'employer':
-        return <EmployerDashboard state={state} dispatch={dispatch} />;
-      case 'freelancer':
-        return <FreelancerDashboard state={state} dispatch={dispatch} />;
-      case 'pfi':
-        return <PFIDashboard state={state} dispatch={dispatch} />;
+      case 'projects':
+        return isEmployer
+          ? <EmployerDashboard state={state} dispatch={dispatch} />
+          : <FreelancerDashboard state={state} dispatch={dispatch} />;
       case 'analytics':
-        return <AnalyticsPanel state={state} dispatch={dispatch} />;
+        return isEmployer
+          ? <AnalyticsPanel state={state} dispatch={dispatch} />
+          : <FreelancerDashboard state={state} dispatch={dispatch} />;
+      case 'pfi':
+        return <PFIDashboard state={state} dispatch={dispatch} mode="self" />;
+      case 'leaderboard':
+        return <PFIDashboard state={state} dispatch={dispatch} mode="leaderboard" />;
       default:
-        return <EmployerDashboard state={state} dispatch={dispatch} />;
+        return isEmployer
+          ? <EmployerDashboard state={state} dispatch={dispatch} />
+          : <FreelancerDashboard state={state} dispatch={dispatch} />;
     }
   };
 
   return (
     <div className="app-shell">
-      {/* Settings Modal */}
-      {showSettings && (
-        <SettingsModal
-          state={state}
-          dispatch={dispatch}
-          onClose={() => state.apiKey && setShowSettings(false)}
-        />
-      )}
-
       {/* Header */}
       <header className="app-header">
         <div className="header-left">
@@ -105,16 +79,13 @@ export default function App() {
           <span className="logo-tagline">Autonomous AI Project & Payment Intermediary</span>
         </div>
         <div className="header-right">
-          <button className="btn btn-sm btn-ghost" onClick={handleExport} title="Export project data">
-            📥 Export
+          <div className="user-info">
+            <span className="user-role-badge">{isEmployer ? '🏢' : '👩‍💻'} {state.user.role}</span>
+            <span className="user-name">{state.user.name}</span>
+          </div>
+          <button className="btn btn-sm btn-ghost" onClick={handleLogout} title="Sign out">
+            🚪 Logout
           </button>
-          <button className="btn btn-sm btn-ghost" onClick={handleReset} title="Reset all data">
-            🔄 Reset
-          </button>
-          <button className="btn btn-sm btn-ghost" onClick={() => setShowSettings(true)} title="Settings">
-            ⚙ Settings
-          </button>
-          {state.apiKey && <span className="api-status connected">● Connected</span>}
         </div>
       </header>
 
@@ -135,30 +106,22 @@ export default function App() {
             ))}
           </div>
           <div className="sidebar-footer">
-            {state.escrow && (
-              <div className="sidebar-escrow-mini">
-                <div className="mini-state">{state.escrow.state}</div>
-                <div className="mini-funds mono">${state.escrow.lockedFunds?.toLocaleString()}</div>
-              </div>
-            )}
+            <div className="sidebar-user-mini">
+              <div className="mini-email">{state.user.email}</div>
+            </div>
           </div>
-
-          {/* Agent Scorer in sidebar */}
-          {state.escrow && state.freelancers.length > 0 && (
-            <AgentScorer state={state} dispatch={dispatch} />
-          )}
         </nav>
 
         {/* Center Content */}
         <main className="main-content">
-          {/* HITL Override banner at top */}
-          <HITLOverride state={state} dispatch={dispatch} />
+          {/* HITL Override banner at top (employer only) */}
+          {isEmployer && <HITLOverride state={state} dispatch={dispatch} />}
           {renderActiveView()}
         </main>
 
         {/* Right Panel: Escrow Ledger */}
         <aside className="ledger-aside">
-          <EscrowLedger ledger={state.ledger} escrow={state.escrow} />
+          <EscrowLedger state={state} dispatch={dispatch} />
         </aside>
       </div>
     </div>
