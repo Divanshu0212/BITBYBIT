@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 from uuid import UUID
 from datetime import datetime, date
-from typing import Any
+from typing import Any, Optional
 
 
 class ProjectCreate(BaseModel):
@@ -73,3 +73,29 @@ class DemoProjectResponse(BaseModel):
 class FreelancerMatchRequest(BaseModel):
     skills: list[str]
     domain: str
+
+
+class ProposalCreate(BaseModel):
+    cover_letter: str = Field(min_length=20, max_length=5000)
+    bid_amount: float | None = Field(None, gt=0)
+    estimated_days: int | None = Field(None, gt=0)
+
+
+class ProposalResponse(BaseModel):
+    id: UUID
+    project_id: UUID
+    freelancer_id: UUID
+    cover_letter: str
+    bid_amount: float | None = None
+    estimated_days: int | None = None
+    status: str
+    created_at: datetime
+    updated_at: datetime
+    # Populated in the route
+    freelancer_name: str | None = None
+    freelancer_email: str | None = None
+    freelancer_skills: list[str] | None = None
+    freelancer_bio: str | None = None
+    freelancer_pfi_score: int | None = None
+
+    model_config = {"from_attributes": True}

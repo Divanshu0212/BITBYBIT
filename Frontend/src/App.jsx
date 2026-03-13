@@ -21,7 +21,7 @@ export default function App() {
   // Set default view based on role
   useEffect(() => {
     if (isLoggedIn) {
-      dispatch({ type: ACTIONS.SET_VIEW, payload: 'projects' });
+      dispatch({ type: ACTIONS.SET_VIEW, payload: isFreelancer ? 'browse' : 'projects' });
     }
   }, [isLoggedIn]);
 
@@ -36,14 +36,16 @@ export default function App() {
 
   const NAV_ITEMS = isEmployer
     ? [
-        { key: 'projects', icon: '🏢', label: 'Projects' },
+        { key: 'projects', icon: '🏢', label: 'My Projects' },
         { key: 'analytics', icon: '📈', label: 'Analytics' },
         { key: 'leaderboard', icon: '🏆', label: 'PFI Leaderboard' },
       ]
     : [
-        { key: 'projects', icon: '👩‍💻', label: 'My Projects' },
+        { key: 'browse', icon: '🔍', label: 'Find Work' },
+        { key: 'proposals', icon: '📨', label: 'My Proposals' },
+        { key: 'projects', icon: '👩‍💻', label: 'Active Projects' },
         { key: 'pfi', icon: '📊', label: 'My PFI Score' },
-        { key: 'leaderboard', icon: '🏆', label: 'PFI Leaderboard' },
+        { key: 'leaderboard', icon: '🏆', label: 'Leaderboard' },
       ];
 
   const renderActiveView = () => {
@@ -51,11 +53,15 @@ export default function App() {
       case 'projects':
         return isEmployer
           ? <EmployerDashboard state={state} dispatch={dispatch} />
-          : <FreelancerDashboard state={state} dispatch={dispatch} />;
+          : <FreelancerDashboard state={state} dispatch={dispatch} mode="projects" />;
+      case 'browse':
+        return <FreelancerDashboard state={state} dispatch={dispatch} mode="browse" />;
+      case 'proposals':
+        return <FreelancerDashboard state={state} dispatch={dispatch} mode="proposals" />;
       case 'analytics':
         return isEmployer
           ? <AnalyticsPanel state={state} dispatch={dispatch} />
-          : <FreelancerDashboard state={state} dispatch={dispatch} />;
+          : <FreelancerDashboard state={state} dispatch={dispatch} mode="projects" />;
       case 'pfi':
         return <PFIDashboard state={state} dispatch={dispatch} mode="self" />;
       case 'leaderboard':
@@ -63,7 +69,7 @@ export default function App() {
       default:
         return isEmployer
           ? <EmployerDashboard state={state} dispatch={dispatch} />
-          : <FreelancerDashboard state={state} dispatch={dispatch} />;
+          : <FreelancerDashboard state={state} dispatch={dispatch} mode="browse" />;
     }
   };
 

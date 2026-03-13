@@ -1,16 +1,16 @@
 """
 Freelancer Routes — /api/freelancer
 ─────────────────────────────────────
-View assigned projects, activate milestones, submit work,
-auto-trigger AQA evaluation, and view PFI scores.
-All endpoints require freelancer role.
+Browse open projects, submit proposals, view assigned projects,
+activate milestones, submit work, auto-trigger AQA evaluation,
+and view PFI scores. All endpoints require freelancer role.
 """
 
 import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,8 +19,9 @@ from middleware.auth import require_role
 from models.project import Milestone, Project
 from models.pfi import HITLQueue
 from models.user import User
+from models.proposal import Proposal
 from routes.auth import get_user_api_key
-from schemas.project import ProjectResponse, WorkSubmission
+from schemas.project import ProjectResponse, WorkSubmission, ProposalCreate
 from services import ai as ai_service
 from services import escrow as escrow_service
 from services import pfi as pfi_service
@@ -30,7 +31,171 @@ router = APIRouter(prefix="/api/freelancer", tags=["Freelancer"])
 freelancer_dep = require_role("freelancer")
 
 
-# ── Projects ─────────────────────────────────────────────────────────────
+# ── Browse Open Projects ─────────────────────────────────────────────────
+
+@router.get("/open-projects")
+async def list_open_projects(
+    user: Annotated[User, Depends(freelancer_dep)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Browse projects that are funded and open for proposals (no freelancer assigned yet)."""
+    result = await db.execute(
+        select(Project)
+        .options(selectinload(Project.milestones))
+        .where(
+            Project.status == "funded",
+            Project.freelancer_id.is_(None),
+        )
+        .order_by(Project.created_at.desc())
+    )
+    projects = result.scalars().all()
+
+    output = []
+    for p in projects:
+        # Check if this freelancer has already submitted a proposal
+        existing_prop = await db.execute(
+            select(Proposal).where(
+                Proposal.project_id == p.id,
+                Proposal.freelancer_id == user.id,
+            )
+        )
+        has_proposed = existing_prop.scalar_one_or_none() is not None
+
+        # Count proposals for the project
+        prop_count = await db.execute(
+            select(func.count(Proposal.id)).where(Proposal.project_id == p.id)
+        )
+        proposal_count = prop_count.scalar() or 0
+
+        # Get employer name
+        employer = await db.get(User, p.employer_id)
+
+        output.append({
+            "id": str(p.id),
+            "description": p.description,
+            "budget": p.budget,
+            "deadline": p.deadline.isoformat() if p.deadline else None,
+            "status": p.status,
+            "risk_level": p.risk_level,
+            "total_estimated_days": p.total_estimated_days,
+            "created_at": p.created_at.isoformat(),
+            "milestone_count": len(p.milestones),
+            "milestones": [
+                {
+                    "title": ms.title,
+                    "domain": ms.domain,
+                    "estimated_days": ms.estimated_days,
+                    "complexity_score": ms.complexity_score,
+                }
+                for ms in sorted(p.milestones, key=lambda m: m.index)
+            ],
+            "employer_name": employer.name if employer else "Unknown",
+            "proposal_count": proposal_count,
+            "has_proposed": has_proposed,
+        })
+    return output
+
+
+# ── Proposals ────────────────────────────────────────────────────────────
+
+@router.post("/projects/{project_id}/propose")
+async def submit_proposal(
+    project_id: uuid.UUID,
+    data: ProposalCreate,
+    user: Annotated[User, Depends(freelancer_dep)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Submit a proposal for an open project."""
+    project = await db.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    if project.status != "funded":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Project is not accepting proposals")
+    if project.freelancer_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Project already has an assigned freelancer")
+
+    # Check for existing proposal
+    existing = await db.execute(
+        select(Proposal).where(
+            Proposal.project_id == project_id,
+            Proposal.freelancer_id == user.id,
+            Proposal.status == "pending",
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="You already have a pending proposal for this project")
+
+    proposal = Proposal(
+        project_id=project_id,
+        freelancer_id=user.id,
+        cover_letter=data.cover_letter,
+        bid_amount=data.bid_amount,
+        estimated_days=data.estimated_days,
+    )
+    db.add(proposal)
+    await db.flush()
+
+    return {
+        "id": str(proposal.id),
+        "project_id": str(proposal.project_id),
+        "status": proposal.status,
+        "message": "Proposal submitted successfully!",
+    }
+
+
+@router.get("/proposals")
+async def list_own_proposals(
+    user: Annotated[User, Depends(freelancer_dep)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """List all proposals submitted by the current freelancer."""
+    result = await db.execute(
+        select(Proposal)
+        .where(Proposal.freelancer_id == user.id)
+        .order_by(Proposal.created_at.desc())
+    )
+    proposals = result.scalars().all()
+
+    output = []
+    for prop in proposals:
+        # Get project info
+        project = await db.get(Project, prop.project_id)
+        employer = await db.get(User, project.employer_id) if project else None
+
+        output.append({
+            "id": str(prop.id),
+            "project_id": str(prop.project_id),
+            "cover_letter": prop.cover_letter,
+            "bid_amount": prop.bid_amount,
+            "estimated_days": prop.estimated_days,
+            "status": prop.status,
+            "created_at": prop.created_at.isoformat(),
+            "project_description": project.description if project else None,
+            "project_budget": project.budget if project else None,
+            "employer_name": employer.name if employer else "Unknown",
+        })
+    return output
+
+
+@router.delete("/proposals/{proposal_id}")
+async def withdraw_proposal(
+    proposal_id: uuid.UUID,
+    user: Annotated[User, Depends(freelancer_dep)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Withdraw a pending proposal."""
+    proposal = await db.get(Proposal, proposal_id)
+    if not proposal or proposal.freelancer_id != user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proposal not found")
+    if proposal.status != "pending":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only pending proposals can be withdrawn")
+
+    proposal.status = "withdrawn"
+    await db.flush()
+    return {"status": "withdrawn", "proposal_id": str(proposal_id)}
+
+
+# ── Assigned Projects ────────────────────────────────────────────────────
 
 @router.get("/projects", response_model=list[ProjectResponse])
 async def list_assigned_projects(

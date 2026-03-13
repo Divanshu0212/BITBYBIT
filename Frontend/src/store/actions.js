@@ -19,7 +19,7 @@ export const ACTIONS = {
   // AQA
   SET_AQA_RESULT:    'SET_AQA_RESULT',
 
-  // Freelancer list (for employer assignment)
+  // Freelancer list (for employer)
   SET_FREELANCERS:   'SET_FREELANCERS',
 
   // Loading / Errors
@@ -35,6 +35,11 @@ export const ACTIONS = {
   SET_ANALYTICS:     'SET_ANALYTICS',
   SET_HITL_ITEMS:    'SET_HITL_ITEMS',
   SET_ASSIGN_SCORES: 'SET_ASSIGN_SCORES',
+
+  // Proposals (new)
+  SET_OPEN_PROJECTS: 'SET_OPEN_PROJECTS',
+  SET_PROPOSALS:     'SET_PROPOSALS',
+  SET_OWN_PROPOSALS: 'SET_OWN_PROPOSALS',
 
   RESET_STATE:       'RESET_STATE',
 };

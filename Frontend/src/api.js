@@ -132,6 +132,26 @@ export async function listFreelancers() {
   return await apiFetch('/employer/freelancers');
 }
 
+// ── Employer: Proposals ────────────────────────────────────────────────
+
+export async function listProjectProposals(projectId) {
+  return await apiFetch(`/employer/projects/${projectId}/proposals`);
+}
+
+export async function acceptProposal(projectId, proposalId) {
+  return await apiFetch(`/employer/projects/${projectId}/proposals/${proposalId}/accept`, {
+    method: 'POST',
+  });
+}
+
+export async function rejectProposal(projectId, proposalId) {
+  return await apiFetch(`/employer/projects/${projectId}/proposals/${proposalId}/reject`, {
+    method: 'POST',
+  });
+}
+
+// ── Employer: HITL & Analytics ─────────────────────────────────────────
+
 export async function getProjectHITL(projectId) {
   return await apiFetch(`/employer/projects/${projectId}/hitl`);
 }
@@ -171,6 +191,34 @@ export async function submitWork(projectId, milestoneId, submissionText, submiss
     body: JSON.stringify(body),
   });
 }
+
+// ── Freelancer: Browse & Proposals ─────────────────────────────────────
+
+export async function listOpenProjects() {
+  return await apiFetch('/freelancer/open-projects');
+}
+
+export async function submitProposal(projectId, { coverLetter, bidAmount, estimatedDays }) {
+  const body = { cover_letter: coverLetter };
+  if (bidAmount) body.bid_amount = bidAmount;
+  if (estimatedDays) body.estimated_days = estimatedDays;
+  return await apiFetch(`/freelancer/projects/${projectId}/propose`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export async function listOwnProposals() {
+  return await apiFetch('/freelancer/proposals');
+}
+
+export async function withdrawProposal(proposalId) {
+  return await apiFetch(`/freelancer/proposals/${proposalId}`, {
+    method: 'DELETE',
+  });
+}
+
+// ── Freelancer: PFI ────────────────────────────────────────────────────
 
 export async function getOwnPFI() {
   return await apiFetch('/freelancer/pfi');

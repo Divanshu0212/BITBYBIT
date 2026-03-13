@@ -14,7 +14,7 @@ export const initialState = {
   token: localStorage.getItem('bitbybit_token') || null,
 
   // Navigation
-  activeView: 'projects',   // 'projects' | 'analytics' | 'pfi' | 'leaderboard'
+  activeView: 'projects',   // 'projects' | 'browse' | 'proposals' | 'analytics' | 'pfi' | 'leaderboard'
 
   // Projects
   projects: [],
@@ -27,7 +27,7 @@ export const initialState = {
   // AQA results (milestoneId → result)
   aqaResults: {},
 
-  // Freelancer list (for employer assignment)
+  // Freelancer list (for employer — legacy)
   freelancers: [],
 
   // Loading / Errors
@@ -43,6 +43,11 @@ export const initialState = {
   analytics: null,
   hitlItems: [],
   assignScores: [],
+
+  // Proposals (new)
+  openProjects: [],     // Funded projects available for freelancers to browse
+  proposals: [],        // Proposals for a specific project (employer view)
+  ownProposals: [],     // Freelancer's own proposals
 };
 
 export function reducer(state, action) {
@@ -103,6 +108,14 @@ export function reducer(state, action) {
       return { ...state, hitlItems: action.payload };
     case ACTIONS.SET_ASSIGN_SCORES:
       return { ...state, assignScores: action.payload };
+
+    // Proposals
+    case ACTIONS.SET_OPEN_PROJECTS:
+      return { ...state, openProjects: action.payload };
+    case ACTIONS.SET_PROPOSALS:
+      return { ...state, proposals: action.payload };
+    case ACTIONS.SET_OWN_PROPOSALS:
+      return { ...state, ownProposals: action.payload };
 
     // Reset
     case ACTIONS.RESET_STATE:
