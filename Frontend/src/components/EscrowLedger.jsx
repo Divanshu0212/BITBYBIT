@@ -136,7 +136,7 @@ export default function EscrowLedger({ state, dispatch }) {
           </div>
         ) : (
           <AnimatePresence>
-            {ledger.map((entry, i) => (
+            {[...ledger].reverse().map((entry, i) => (
               <motion.div
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}

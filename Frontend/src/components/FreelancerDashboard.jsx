@@ -537,17 +537,17 @@ export default function FreelancerDashboard({ state, dispatch, mode = 'browse' }
                   {state.loading.activate ? <><span className="spinner" /> Activating...</> : <><Play size={16} /> Activate Milestone</>}
                 </button>
               )}
-              {ms.status === 'IN_PROGRESS' && (
+              {['IN_PROGRESS', 'PAID_PARTIAL', 'REFUND_INITIATED'].includes(ms.status) && (
                 <button className="btn btn-primary flex items-center gap-2" onClick={() => setSelectedMs(ms.id)}>
-                  <ClipboardList size={16} /> Submit Work
+                  <ClipboardList size={16} /> {ms.status === 'IN_PROGRESS' ? 'Submit Work' : 'Resubmit Work'}
                 </button>
               )}
             </div>
 
             {/* Submission Form */}
-            {selectedMs === ms.id && ms.status === 'IN_PROGRESS' && (
+            {selectedMs === ms.id && ['IN_PROGRESS', 'PAID_PARTIAL', 'REFUND_INITIATED'].includes(ms.status) && (
               <div className="submission-form animate-fade-in">
-                <h5>Submit Work for Review</h5>
+                <h5>{ms.status === 'IN_PROGRESS' ? 'Submit Work for Review' : 'Resubmit Work for Review'}</h5>
                 <textarea
                   className="input-textarea"
                   rows={4}

@@ -188,8 +188,8 @@ async def submit_work(
     milestone = await db.get(Milestone, milestone_id)
     if not milestone:
         raise ValueError("Milestone not found")
-    if milestone.status != "IN_PROGRESS":
-        raise ValueError(f"Milestone must be IN_PROGRESS to submit work, got {milestone.status}")
+    if milestone.status not in ("IN_PROGRESS", "PAID_PARTIAL", "REFUND_INITIATED"):
+        raise ValueError(f"Milestone must be IN_PROGRESS, PAID_PARTIAL, or REFUND_INITIATED to submit work, got {milestone.status}")
 
     milestone.submission = submission_text
     milestone.submission_url = submission_url
