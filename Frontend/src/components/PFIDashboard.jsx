@@ -2,31 +2,38 @@ import React, { useEffect, useState } from 'react';
 import { ACTIONS } from '../store/actions';
 import * as api from '../api';
 
-function GaugeCircle({ score, size = 100 }) {
+function GaugeCircle({ score, size = 120 }) {
   const radius = (size - 12) / 2;
-  const circumference = 2 * Math.PI * radius;
+  const circumference = Math.PI * radius; // Semi-circle!
   const percentage = Math.max(0, Math.min(1, (score - 300) / 700));
   const offset = circumference - percentage * circumference;
   const color = score >= 850 ? 'var(--cyan)' : score >= 720 ? 'var(--green)' : score >= 580 ? 'var(--yellow)' : score >= 450 ? '#f97316' : 'var(--red)';
 
   return (
-    <svg width={size} height={size} className="gauge-svg">
-      <circle cx={size / 2} cy={size / 2} r={radius}
-        fill="none" stroke="var(--surface-alt)" strokeWidth="6" />
-      <circle cx={size / 2} cy={size / 2} r={radius}
-        fill="none" stroke={color} strokeWidth="6"
-        strokeDasharray={circumference} strokeDashoffset={offset}
+    <svg width={size} height={size / 1.7} className="gauge-svg">
+      <path
+        d={`M 6,${size/2} A ${radius},${radius} 0 0,1 ${size-6},${size/2}`}
+        fill="none"
+        stroke="var(--surface-alt)"
+        strokeWidth="6"
+        strokeLinecap="round" />
+      <path
+        d={`M 6,${size/2} A ${radius},${radius} 0 0,1 ${size-6},${size/2}`}
+        fill="none"
+        stroke={color}
+        strokeWidth="6"
+        strokeDasharray={circumference}
+        strokeDashoffset={offset}
         strokeLinecap="round"
-        transform={`rotate(-90 ${size / 2} ${size / 2})`}
         className="gauge-fill"
       />
-      <text x={size / 2} y={size / 2 - 6} textAnchor="middle" fill={color}
-        fontSize="20" fontWeight="700" fontFamily="'JetBrains Mono', monospace">
+      <text x={size / 2} y={size / 2 - 8} textAnchor="middle" fill={color}
+        fontSize="24" fontWeight="700" fontFamily="'JetBrains Mono', monospace">
         {score}
       </text>
-      <text x={size / 2} y={size / 2 + 12} textAnchor="middle" fill="var(--muted)"
+      <text x={size / 2} y={size / 2 + 10} textAnchor="middle" fill="var(--muted)"
         fontSize="10">
-        PFI
+        PFI RANGE
       </text>
     </svg>
   );

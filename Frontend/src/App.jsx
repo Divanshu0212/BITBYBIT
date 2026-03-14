@@ -1,6 +1,7 @@
 import React, { useReducer, useEffect } from 'react';
 import { reducer, initialState } from './store/reducer';
 import { ACTIONS } from './store/actions';
+import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { clearAuth, getToken } from './api';
 import { LineChart, Trophy, Search, Mail, Briefcase, BarChart2, LogOut, Zap, Building, User } from 'lucide-react';
 
@@ -19,12 +20,16 @@ export default function App() {
   const isEmployer = state.user?.role === 'employer';
   const isFreelancer = state.user?.role === 'freelancer';
 
+  const navigate = useNavigate();
+  const location = useLocation();
+
   // Set default view based on role
   useEffect(() => {
-    if (isLoggedIn) {
+    if (isLoggedIn && location.pathname === '/') {
+      navigate(isFreelancer ? '/browse' : '/projects', { replace: true });
       dispatch({ type: ACTIONS.SET_VIEW, payload: isFreelancer ? 'browse' : 'projects' });
     }
-  }, [isLoggedIn]);
+  }, [isLoggedIn, location.pathname, isFreelancer, navigate]);
 
   const handleLogout = () => {
     clearAuth();
@@ -49,30 +54,7 @@ export default function App() {
       { key: 'leaderboard', icon: <Trophy size={18} />, label: 'Leaderboard' },
     ];
 
-  const renderActiveView = () => {
-    switch (state.activeView) {
-      case 'projects':
-        return isEmployer
-          ? <EmployerDashboard state={state} dispatch={dispatch} />
-          : <FreelancerDashboard state={state} dispatch={dispatch} mode="projects" />;
-      case 'browse':
-        return <FreelancerDashboard state={state} dispatch={dispatch} mode="browse" />;
-      case 'proposals':
-        return <FreelancerDashboard state={state} dispatch={dispatch} mode="proposals" />;
-      case 'analytics':
-        return isEmployer
-          ? <AnalyticsPanel state={state} dispatch={dispatch} />
-          : <FreelancerDashboard state={state} dispatch={dispatch} mode="projects" />;
-      case 'pfi':
-        return <PFIDashboard state={state} dispatch={dispatch} mode="self" />;
-      case 'leaderboard':
-        return <PFIDashboard state={state} dispatch={dispatch} mode="leaderboard" />;
-      default:
-        return isEmployer
-          ? <EmployerDashboard state={state} dispatch={dispatch} />
-          : <FreelancerDashboard state={state} dispatch={dispatch} mode="browse" />;
-    }
-  };
+  // Routing is now handled by react-router-dom in the JSX directly
 
   return (
     <div className="app-shell">
@@ -107,8 +89,11 @@ export default function App() {
             {NAV_ITEMS.map(item => (
               <button
                 key={item.key}
-                className={`nav-btn ${state.activeView === item.key ? 'active' : ''}`}
-                onClick={() => dispatch({ type: ACTIONS.SET_VIEW, payload: item.key })}
+                className={`nav-btn ${location.pathname.includes(item.key) ? 'active' : ''}`}
+                onClick={() => {
+                  navigate(`/${item.key}`);
+                  dispatch({ type: ACTIONS.SET_VIEW, payload: item.key });
+                }}
               >
                 <span className="nav-icon" style={{ display: 'flex' }}>{item.icon}</span>
                 <span className="nav-label">{item.label}</span>
@@ -126,7 +111,16 @@ export default function App() {
         <main className="main-content">
           {/* HITL Override banner at top (employer only) */}
           {isEmployer && <HITLOverride state={state} dispatch={dispatch} />}
-          {renderActiveView()}
+          {/* Main Route Content */}
+          <Routes>
+            <Route path="/projects" element={isEmployer ? <EmployerDashboard state={state} dispatch={dispatch} /> : <FreelancerDashboard state={state} dispatch={dispatch} mode="projects" />} />
+            <Route path="/browse" element={<FreelancerDashboard state={state} dispatch={dispatch} mode="browse" />} />
+            <Route path="/proposals" element={<FreelancerDashboard state={state} dispatch={dispatch} mode="proposals" />} />
+            <Route path="/analytics" element={isEmployer ? <AnalyticsPanel state={state} dispatch={dispatch} /> : <Navigate to="/projects" replace />} />
+            <Route path="/pfi" element={<PFIDashboard state={state} dispatch={dispatch} mode="self" />} />
+            <Route path="/leaderboard" element={<PFIDashboard state={state} dispatch={dispatch} mode="leaderboard" />} />
+            <Route path="*" element={<Navigate to={isEmployer ? '/projects' : '/browse'} replace />} />
+          </Routes>
         </main>
 
         {/* Right Panel: Escrow Ledger */}
