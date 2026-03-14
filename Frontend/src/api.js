@@ -183,9 +183,11 @@ export async function activateMilestone(projectId, milestoneId) {
   });
 }
 
-export async function submitWork(projectId, milestoneId, submissionText, submissionUrl) {
+export async function submitWork(projectId, milestoneId, submissionText, submissionUrl, repoUrl, commitHash) {
   const body = { submission_text: submissionText };
   if (submissionUrl) body.submission_url = submissionUrl;
+  if (repoUrl) body.repo_url = repoUrl;
+  if (commitHash) body.commit_hash = commitHash;
   return await apiFetch(`/freelancer/projects/${projectId}/milestones/${milestoneId}/submit`, {
     method: 'POST',
     body: JSON.stringify(body),

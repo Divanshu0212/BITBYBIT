@@ -6,13 +6,16 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Building2, Wallet, ClipboardList, PenTool, CheckCircle2,
   DollarSign, Clock, AlertTriangle, AlertCircle, XCircle,
-  Search, Package, Mail, Briefcase, RefreshCw, Send, SendHorizontal, Undo2, Play, SearchCode
+  Search, Package, Mail, Briefcase, RefreshCw, Send, SendHorizontal, Undo2, Play, SearchCode,
+  Github, GitCommitHorizontal
 } from 'lucide-react';
 
 export default function FreelancerDashboard({ state, dispatch, mode = 'browse' }) {
   const [selectedMs, setSelectedMs] = useState(null);
   const [submissionText, setSubmissionText] = useState('');
   const [submissionUrl, setSubmissionUrl] = useState('');
+  const [repoUrl, setRepoUrl] = useState('');
+  const [commitHash, setCommitHash] = useState('');
   const [selectedProject, setSelectedProject] = useState(null);
   const [submissionLoading, setSubmissionLoading] = useState(false);
   const [submissionResult, setSubmissionResult] = useState(null);
@@ -127,7 +130,8 @@ export default function FreelancerDashboard({ state, dispatch, mode = 'browse' }
     try {
       const result = await api.submitWork(
         project.id, milestone.id,
-        submissionText, submissionUrl || null
+        submissionText, submissionUrl || null,
+        repoUrl || null, commitHash || null
       );
 
       setSubmissionResult(result);
@@ -142,6 +146,8 @@ export default function FreelancerDashboard({ state, dispatch, mode = 'browse' }
 
       setSubmissionText('');
       setSubmissionUrl('');
+      setRepoUrl('');
+      setCommitHash('');
       setSelectedMs(null);
     } catch (err) {
       dispatch({ type: ACTIONS.SET_ERROR, payload: { aqa: err.message } });
@@ -562,14 +568,74 @@ export default function FreelancerDashboard({ state, dispatch, mode = 'browse' }
                   onChange={e => setSubmissionUrl(e.target.value)}
                   placeholder="Optional: Link to deliverable (URL)"
                 />
+
+                {/* GitHub Repo Fields — mandatory for code milestones */}
+                {(ms.task_type || '').toLowerCase() === 'code' ? (
+                  <div className="code-repo-fields">
+                    <div className="repo-field-group">
+                      <label className="input-label flex items-center gap-1">
+                        <Github size={16} /> GitHub Repository URL <span className="required-star">*</span>
+                      </label>
+                      <input
+                        type="url"
+                        className="input-field repo-url-field"
+                        value={repoUrl}
+                        onChange={e => setRepoUrl(e.target.value)}
+                        placeholder="https://github.com/username/repo"
+                        required
+                      />
+                      {!repoUrl.trim() && (
+                        <span className="field-hint field-hint-warning">Required for code milestones</span>
+                      )}
+                    </div>
+                    <div className="repo-field-group">
+                      <label className="input-label flex items-center gap-1">
+                        <GitCommitHorizontal size={16} /> Commit Hash
+                        <span className="optional-tag">optional</span>
+                      </label>
+                      <input
+                        type="text"
+                        className="input-field commit-hash-field mono"
+                        value={commitHash}
+                        onChange={e => setCommitHash(e.target.value)}
+                        placeholder="e.g. a1b2c3d (pins verification to exact commit)"
+                        maxLength={64}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="repo-field-group">
+                    <label className="input-label flex items-center gap-1">
+                      <Github size={16} /> GitHub Repository URL
+                      <span className="optional-tag">optional</span>
+                    </label>
+                    <input
+                      type="url"
+                      className="input-field"
+                      value={repoUrl}
+                      onChange={e => setRepoUrl(e.target.value)}
+                      placeholder="https://github.com/username/repo (optional)"
+                    />
+                  </div>
+                )}
+
                 <div className="btn-row">
                   <button className="btn btn-ghost" onClick={() => setSelectedMs(null)}>Cancel</button>
                   <button
                     className="btn btn-primary"
                     onClick={() => handleSubmitWork(selectedProject, ms)}
-                    disabled={!submissionText.trim() || submissionLoading}
+                    disabled={
+                      !submissionText.trim() ||
+                      submissionLoading ||
+                      ((ms.task_type || '').toLowerCase() === 'code' && !repoUrl.trim())
+                    }
                   >
-                    {submissionLoading ? <><span className="spinner" /> Running AQA Analysis...</> : '🚀 Submit for AQA Review'}
+                    {submissionLoading
+                      ? <><span className="spinner" /> Running AQA Analysis...</>
+                      : (ms.task_type || '').toLowerCase() === 'code'
+                        ? '🔬 Submit for Code Verification'
+                        : '🚀 Submit for AQA Review'
+                    }
                   </button>
                 </div>
               </div>

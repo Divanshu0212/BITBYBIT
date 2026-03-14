@@ -12,6 +12,7 @@ from services.verification_engine import (
     run_content_checks,
     run_design_checks,
     compute_composite_score,
+    compute_code_pipeline_score,
     make_payment_decision,
 )
 
@@ -289,3 +290,68 @@ class TestSchemaValidation:
         assert result.overallScore == 75
         assert result.modality == "code"
         assert result.confidence == 0.85
+
+
+# ── Code Pipeline Score Tests ──────────────────────────────────────────
+
+class TestCodePipelineScore:
+    def test_weighted_scoring_all_layers(self):
+        """All 4 layers contributing: static*0.15 + runtime*0.35 + sonar*0.20 + llm*0.30."""
+        static = {"parse_check": 80, "structure_check": 90}
+        runtime = {"test_execution": 70, "test_presence": 100}
+        sonar = {"sonar_gate": 100}
+        llm = {"criterion_0": 80, "criterion_1": 90}
+
+        score, confidence = compute_code_pipeline_score(static, runtime, sonar, llm)
+        # static_avg=85, runtime_avg=85, sonar_avg=100, llm_avg=85
+        # = 85*0.15 + 85*0.35 + 100*0.20 + 85*0.30 = 12.75 + 29.75 + 20 + 25.5 = 88.0
+        assert 85 <= score <= 92
+        assert confidence > 0.7
+
+    def test_sonarqube_fail_caps_at_70(self):
+        """SonarQube ERROR status caps overall score at 70."""
+        static = {"parse_check": 100}
+        runtime = {"test_execution": 100}
+        sonar = {"sonar_gate": 25}
+        llm = {"criterion_0": 100}
+
+        score, _ = compute_code_pipeline_score(
+            static, runtime, sonar, llm, sonar_gate_status="ERROR"
+        )
+        assert score <= 70
+
+    def test_llm_alone_cannot_produce_full_score(self):
+        """When only LLM has data, score is capped below FULL_PAY threshold."""
+        static = {}
+        runtime = {}
+        sonar = {}
+        llm = {"criterion_0": 100, "criterion_1": 100}
+
+        score, confidence = compute_code_pipeline_score(static, runtime, sonar, llm)
+        # Score should be capped at 84 (below 85 full-pay threshold)
+        assert score <= 84
+        assert confidence <= 0.65
+
+    def test_confidence_increases_with_layers(self):
+        """More layers contributing → higher confidence."""
+        llm_only_score, llm_only_conf = compute_code_pipeline_score(
+            {}, {}, {}, {"c0": 80}
+        )
+        two_layers_score, two_layers_conf = compute_code_pipeline_score(
+            {"parse": 80}, {}, {}, {"c0": 80}
+        )
+        all_layers_score, all_layers_conf = compute_code_pipeline_score(
+            {"parse": 80}, {"test": 80}, {"sonar": 80}, {"c0": 80}
+        )
+        assert all_layers_conf > two_layers_conf
+        assert two_layers_conf > llm_only_conf
+
+    def test_deterministic_pass_allows_full_score(self):
+        """When static/runtime pass, LLM doesn't cap the score."""
+        static = {"parse_check": 90}
+        runtime = {"test_execution": 95}
+        sonar = {"sonar_gate": 100}
+        llm = {"criterion_0": 95, "criterion_1": 90}
+
+        score, _ = compute_code_pipeline_score(static, runtime, sonar, llm)
+        assert score >= 85  # Should reach full-pay threshold

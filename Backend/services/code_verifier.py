@@ -35,6 +35,10 @@ CLONE_TIMEOUT = 60       # seconds
 TEST_TIMEOUT = 120       # seconds
 SONAR_POLL_TIMEOUT = 180 # seconds
 SONAR_POLL_INTERVAL = 5  # seconds
+DOCKER_TIMEOUT = 180     # seconds for Docker-based test execution
+
+SANDBOX_IMAGE = "bitbybit-sandbox"
+SONAR_SCANNER_IMAGE = "sonarsource/sonar-scanner-cli:latest"
 
 SUPPORTED_LANGUAGES = {"python", "javascript", "typescript", "go"}
 
@@ -44,6 +48,126 @@ LAYER_WEIGHTS = {
     "sonarqube": 0.20,
     "llm_semantic": 0.30,
 }
+
+
+# ── Docker Helpers ───────────────────────────────────────────────────────
+
+def _is_docker_available() -> bool:
+    """Check if Docker daemon is running and accessible."""
+    try:
+        result = subprocess.run(
+            ["docker", "info"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return result.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
+def _is_sandbox_image_available() -> bool:
+    """Check if the bitbybit-sandbox Docker image is built."""
+    try:
+        result = subprocess.run(
+            ["docker", "image", "inspect", SANDBOX_IMAGE],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return result.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
+def _run_docker_tests(repo_path: Path, language: str) -> tuple[dict, dict]:
+    """
+    Run tests inside a Docker container with zero network access.
+    The repo is mounted read-write at /app inside the container.
+    Returns (scores, details) tuple.
+    """
+    scores = {}
+    details = {}
+
+    try:
+        result = subprocess.run(
+            [
+                "docker", "run", "--rm",
+                "--network=none",           # Zero network access
+                "--memory=512m",            # Memory limit
+                "--cpus=1.0",               # CPU limit
+                "--pids-limit=256",          # Process limit
+                "--read-only",              # Read-only root filesystem
+                "--tmpfs", "/tmp:size=100m",  # Writable tmp
+                "-v", f"{repo_path}:/app:rw",
+                SANDBOX_IMAGE,
+                language,
+                str(TEST_TIMEOUT),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=DOCKER_TIMEOUT,
+        )
+
+        output = result.stdout + result.stderr
+
+        # Try to parse JSON results from the container
+        result_file = repo_path / ".test_results.json"
+        if result_file.exists():
+            try:
+                test_data = json.loads(result_file.read_text())
+                passed = int(test_data.get("passed", 0))
+                failed = int(test_data.get("failed", 0))
+                total = passed + failed
+
+                scores["test_presence"] = 100 if total > 0 else 0
+                details["test_presence"] = f"{total} tests found (sandboxed)"
+
+                if total > 0:
+                    pass_rate = (passed / total) * 100
+                    scores["test_execution"] = round(pass_rate)
+                    scores["test_pass_ratio"] = round(pass_rate)
+                    details["test_execution"] = f"{passed}/{total} tests passed (Docker sandbox)"
+                elif result.returncode == 0:
+                    scores["test_execution"] = 80
+                    details["test_execution"] = "Sandbox ran without errors (no parsable test count)"
+                else:
+                    scores["test_execution"] = 10
+                    details["test_execution"] = f"Sandbox tests failed: {output[:300]}"
+
+                # Clean up result file
+                result_file.unlink(missing_ok=True)
+                return scores, details
+
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+        # Fallback: parse stdout
+        if result.returncode == 0:
+            scores["test_presence"] = 50
+            scores["test_execution"] = 70
+            details["test_presence"] = "Tests ran in sandbox (could not parse results)"
+            details["test_execution"] = "Sandbox completed without errors"
+        else:
+            scores["test_presence"] = 0
+            scores["test_execution"] = 10
+            details["test_presence"] = "Tests found but execution failed"
+            details["test_execution"] = f"Sandbox error: {output[:300]}"
+
+    except subprocess.TimeoutExpired:
+        scores["test_presence"] = 50
+        scores["test_execution"] = 20
+        details["test_presence"] = "Tests found"
+        details["test_execution"] = f"Sandbox timed out ({DOCKER_TIMEOUT}s limit)"
+    except FileNotFoundError:
+        scores["test_execution"] = 0
+        details["test_execution"] = "Docker not available for sandbox execution"
+    except Exception as exc:
+        logger.error(f"Docker sandbox error: {exc}")
+        scores["test_execution"] = 0
+        details["test_execution"] = f"Sandbox error: {str(exc)[:200]}"
+
+    return scores, details
 
 
 # ── Repo Operations ─────────────────────────────────────────────────────
@@ -374,22 +498,30 @@ def _ast_go(repo_path: Path, spec_entities: list[str] | None) -> tuple[dict, dic
 
 def run_test_suite(repo_path: Path, language: str) -> dict:
     """
-    Execute the project's test suite in a sandboxed subprocess.
+    Execute the project's test suite.
+    Priority: Docker sandbox (--network=none) → subprocess fallback.
     Returns scores dict with test results.
     """
     scores = {}
     details = {}
 
     try:
-        if language == "python":
-            scores, details = _run_python_tests(repo_path)
-        elif language in ("javascript", "typescript"):
-            scores, details = _run_js_tests(repo_path)
-        elif language == "go":
-            scores, details = _run_go_tests(repo_path)
+        # Prefer Docker sandbox for isolated, zero-network execution
+        if _is_docker_available() and _is_sandbox_image_available():
+            logger.info("Using Docker sandbox for test execution (--network=none)")
+            scores, details = _run_docker_tests(repo_path, language)
         else:
-            scores = {"test_execution": 0}
-            details = {"test_execution": "Unsupported language for test execution"}
+            # Fallback to direct subprocess execution
+            logger.info("Docker sandbox unavailable, using subprocess fallback")
+            if language == "python":
+                scores, details = _run_python_tests(repo_path)
+            elif language in ("javascript", "typescript"):
+                scores, details = _run_js_tests(repo_path)
+            elif language == "go":
+                scores, details = _run_go_tests(repo_path)
+            else:
+                scores = {"test_execution": 0}
+                details = {"test_execution": "Unsupported language for test execution"}
     except Exception as exc:
         logger.error(f"Test execution error: {exc}")
         scores = {"test_execution": 0}
@@ -617,10 +749,58 @@ def _run_go_tests(repo_path: Path) -> tuple[dict, dict]:
 
 # ── Layer 3: SonarQube Quality Gate ──────────────────────────────────────
 
+def _run_sonar_scanner_docker(repo_path: Path, sonar_url: str, sonar_token: str, project_key: str, sonar_lang: str) -> bool:
+    """Run SonarScanner via Docker. Returns True on success."""
+    try:
+        result = subprocess.run(
+            [
+                "docker", "run", "--rm",
+                "--network=host",
+                "-v", f"{repo_path}:/usr/src",
+                "-e", f"SONAR_HOST_URL={sonar_url}",
+                SONAR_SCANNER_IMAGE,
+                f"-Dsonar.projectKey={project_key}",
+                f"-Dsonar.sources=.",
+                f"-Dsonar.language={sonar_lang}",
+                f"-Dsonar.token={sonar_token}",
+                f"-Dsonar.exclusions=**/node_modules/**,**/vendor/**,**/.git/**,**/venv/**",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=SONAR_POLL_TIMEOUT,
+        )
+        if result.returncode != 0:
+            logger.warning(f"Docker SonarScanner failed: {result.stderr[:500]}")
+            return False
+        return True
+    except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+        logger.warning(f"Docker SonarScanner error: {exc}")
+        return False
+
+
+def _run_sonar_scanner_cli(repo_path: Path, sonar_props: Path) -> bool:
+    """Run SonarScanner via locally installed CLI. Returns True on success."""
+    try:
+        result = subprocess.run(
+            ["sonar-scanner", f"-Dproject.settings={sonar_props}"],
+            cwd=str(repo_path),
+            capture_output=True,
+            text=True,
+            timeout=SONAR_POLL_TIMEOUT,
+        )
+        if result.returncode != 0:
+            logger.warning(f"SonarScanner CLI failed: {result.stderr[:500]}")
+            return False
+        return True
+    except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+        logger.warning(f"SonarScanner CLI error: {exc}")
+        return False
+
+
 async def run_sonarqube_scan(repo_path: Path, language: str, project_key: str | None = None) -> dict:
     """
     Run SonarScanner and poll quality gate via REST API.
-    Gracefully degrades if SonarQube is unavailable.
+    Priority: Docker sonar-scanner-cli → local sonar-scanner CLI → graceful degradation.
     """
     sonar_url = getattr(settings, "SONARQUBE_URL", None)
     sonar_token = getattr(settings, "SONARQUBE_TOKEN", None)
@@ -632,14 +812,31 @@ async def run_sonarqube_scan(repo_path: Path, language: str, project_key: str | 
             "available": False,
         }
 
+    # Check if SonarQube server is actually reachable
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.get(f"{sonar_url}/api/system/status")
+            if resp.status_code != 200:
+                raise ValueError("SonarQube not responding")
+            status_data = resp.json()
+            if status_data.get("status") != "UP":
+                raise ValueError(f"SonarQube status: {status_data.get('status')}")
+    except Exception as exc:
+        logger.info(f"SonarQube server not reachable: {exc}")
+        return {
+            "scores": {"sonar_gate": 50},
+            "details": {"sonar_gate": f"SonarQube server not reachable — using neutral score"},
+            "available": False,
+        }
+
     if not project_key:
         project_key = f"bitbybit-verify-{uuid.uuid4().hex[:12]}"
 
-    # Create sonar-project.properties
-    sonar_props = repo_path / "sonar-project.properties"
     lang_map = {"python": "py", "javascript": "js", "typescript": "ts", "go": "go"}
     sonar_lang = lang_map.get(language, "py")
 
+    # Create sonar-project.properties (for CLI fallback)
+    sonar_props = repo_path / "sonar-project.properties"
     sonar_props.write_text(
         f"sonar.projectKey={project_key}\n"
         f"sonar.sources=.\n"
@@ -652,48 +849,33 @@ async def run_sonarqube_scan(repo_path: Path, language: str, project_key: str | 
     scores = {}
     details = {}
 
-    try:
-        # Run SonarScanner CLI
-        scanner_cmd = ["sonar-scanner", f"-Dproject.settings={sonar_props}"]
-        result = subprocess.run(
-            scanner_cmd,
-            cwd=str(repo_path),
-            capture_output=True,
-            text=True,
-            timeout=SONAR_POLL_TIMEOUT,
-        )
+    # Try Docker scanner first, then CLI fallback
+    scan_success = False
+    if _is_docker_available():
+        logger.info("Running SonarScanner via Docker")
+        scan_success = _run_sonar_scanner_docker(repo_path, sonar_url, sonar_token, project_key, sonar_lang)
 
-        if result.returncode != 0:
-            logger.warning(f"SonarScanner failed: {result.stderr[:500]}")
-            return {
-                "scores": {"sonar_gate": 50},
-                "details": {"sonar_gate": f"SonarScanner execution failed: {result.stderr[:200]}"},
-                "available": False,
-            }
+    if not scan_success:
+        logger.info("Falling back to local sonar-scanner CLI")
+        scan_success = _run_sonar_scanner_cli(repo_path, sonar_props)
 
-        # Poll quality gate status
-        import asyncio
-        gate_result = await _poll_sonar_quality_gate(sonar_url, sonar_token, project_key)
-        scores.update(gate_result["scores"])
-        details.update(gate_result["details"])
-
-        # Cleanup: delete project from SonarQube
-        await _delete_sonar_project(sonar_url, sonar_token, project_key)
-
-        return {"scores": scores, "details": details, "available": True}
-
-    except subprocess.TimeoutExpired:
+    if not scan_success:
         return {
             "scores": {"sonar_gate": 50},
-            "details": {"sonar_gate": "SonarScanner timed out"},
+            "details": {"sonar_gate": "SonarScanner not available (neither Docker nor CLI)"},
             "available": False,
         }
-    except FileNotFoundError:
-        return {
-            "scores": {"sonar_gate": 50},
-            "details": {"sonar_gate": "sonar-scanner CLI not installed"},
-            "available": False,
-        }
+
+    # Poll quality gate status
+    import asyncio
+    gate_result = await _poll_sonar_quality_gate(sonar_url, sonar_token, project_key)
+    scores.update(gate_result["scores"])
+    details.update(gate_result["details"])
+
+    # Cleanup: delete project from SonarQube
+    await _delete_sonar_project(sonar_url, sonar_token, project_key)
+
+    return {"scores": scores, "details": details, "available": True}
 
 
 async def _poll_sonar_quality_gate(sonar_url: str, token: str, project_key: str) -> dict:

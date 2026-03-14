@@ -1,0 +1,42 @@
+# ─────────────────────────────────────────────────────────────────────
+# BITBYBIT Code Verification Sandbox
+# Multi-language test runner: Python, Node.js, Go
+# Run with: docker build -f Backend/Dockerfile.sandbox -t bitbybit-sandbox .
+# Used with: --network=none (zero network access)
+# ─────────────────────────────────────────────────────────────────────
+
+FROM python:3.12-slim AS base
+
+# ── System deps ──────────────────────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl git ca-certificates gnupg \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Node.js 20 ──────────────────────────────────────────────────────
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Go 1.22 ─────────────────────────────────────────────────────────
+RUN curl -fsSL https://go.dev/dl/go1.22.5.linux-amd64.tar.gz \
+    | tar -C /usr/local -xz
+ENV PATH="/usr/local/go/bin:${PATH}"
+
+# ── Python test tools ───────────────────────────────────────────────
+RUN pip install --no-cache-dir pytest pytest-json-report coverage
+
+# ── Node test tools ─────────────────────────────────────────────────
+RUN npm install -g jest
+
+# ── Create non-root user ────────────────────────────────────────────
+RUN useradd -m -s /bin/bash sandbox
+USER sandbox
+WORKDIR /app
+
+# ── Entrypoint: run_tests.sh ────────────────────────────────────────
+COPY Backend/scripts/run_tests.sh /usr/local/bin/run_tests.sh
+USER root
+RUN chmod +x /usr/local/bin/run_tests.sh
+USER sandbox
+
+ENTRYPOINT ["/usr/local/bin/run_tests.sh"]

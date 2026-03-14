@@ -2545,3 +2545,357 @@ a:hover { text-decoration: underline; }
   color: var(--cyan);
 }
 
+/* ============================================
+   CODE VERIFICATION PIPELINE — AQA Report
+   ============================================ */
+.code-pipeline-section {
+  background: linear-gradient(135deg, rgba(58, 134, 255, 0.05), rgba(0, 212, 255, 0.05));
+  border: 1px solid rgba(58, 134, 255, 0.2);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  margin: 14px 0;
+}
+
+.pipeline-repo-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pipeline-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--cyan);
+  letter-spacing: 0.3px;
+}
+
+.pipeline-repo-meta {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.repo-link {
+  font-size: 11px;
+  color: var(--blue);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.repo-link:hover {
+  text-decoration: underline;
+  color: var(--cyan);
+}
+
+.commit-badge {
+  font-size: 10px;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  padding: 2px 8px;
+  border-radius: 4px;
+  color: var(--text-secondary);
+}
+
+.lang-badge {
+  font-size: 10px;
+  font-weight: 600;
+  background: #3A86FF18;
+  border: 1px solid #3A86FF40;
+  color: var(--blue);
+  padding: 2px 10px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Layer Score Cards — 4-column grid */
+.layer-score-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+@media (max-width: 700px) {
+  .layer-score-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.layer-score-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  text-align: center;
+  transition: border-color 0.2s;
+}
+
+.layer-score-card:hover {
+  border-color: var(--cyan-dim);
+}
+
+.layer-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.layer-icon {
+  font-size: 14px;
+}
+
+.layer-name {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.layer-weight {
+  font-size: 9px;
+  color: var(--muted);
+  background: var(--surface-alt);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+}
+
+.layer-score-value {
+  font-size: 28px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  line-height: 1.1;
+  margin-bottom: 6px;
+}
+
+.layer-score-bar {
+  height: 4px;
+  background: var(--surface-alt);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.layer-score-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.6s ease;
+}
+
+/* Layer Details Toggle */
+.layer-details-toggle {
+  width: 100%;
+  text-align: center;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+/* Layer Details Grid */
+.layer-details-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.layer-detail-block {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+}
+
+.layer-detail-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 4px;
+}
+
+.layer-detail-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.layer-detail-key {
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: capitalize;
+  flex-shrink: 0;
+}
+
+.layer-detail-val {
+  font-size: 10px;
+  color: var(--text-secondary);
+  text-align: right;
+  word-break: break-all;
+}
+
+/* Security Issues */
+.security-issues-section {
+  background: #FF525210;
+  border: 1px solid #FF525230;
+  border-radius: var(--radius);
+  padding: 12px;
+  margin: 10px 0;
+}
+
+.security-issues-section h6 {
+  color: var(--red);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.security-issues-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.security-issue-item {
+  font-size: 11px;
+  color: var(--orange);
+  padding: 3px 0;
+  padding-left: 4px;
+  border-bottom: 1px solid #FF525215;
+}
+
+.security-issue-item:last-child {
+  border-bottom: none;
+}
+
+/* PFI Signals Row */
+.pfi-signals-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+  margin-top: 8px;
+}
+
+.pfi-signal {
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--surface);
+  padding: 3px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+
+.pfi-signal-warn {
+  color: var(--orange);
+  border-color: #FF910030;
+}
+
+/* Dispute Evidence (collapsible) */
+.dispute-evidence-section {
+  margin-top: 12px;
+}
+
+.dispute-toggle {
+  width: 100%;
+  text-align: center;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.dispute-evidence-block {
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-top: 8px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+/* ============================================
+   CODE REPO FIELDS — Submission Form
+   ============================================ */
+.code-repo-fields {
+  background: linear-gradient(135deg, rgba(58, 134, 255, 0.06), rgba(0, 212, 255, 0.04));
+  border: 1px solid rgba(58, 134, 255, 0.2);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin: 10px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.repo-field-group {
+  margin-bottom: 8px;
+}
+
+.repo-field-group .input-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.required-star {
+  color: var(--red);
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.optional-tag {
+  font-size: 9px;
+  color: var(--muted);
+  background: var(--surface-alt);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.repo-url-field {
+  border-color: rgba(58, 134, 255, 0.3) !important;
+}
+
+.repo-url-field:focus {
+  border-color: var(--blue) !important;
+  box-shadow: 0 0 0 2px rgba(58, 134, 255, 0.15);
+}
+
+.commit-hash-field {
+  font-size: 12px !important;
+  letter-spacing: 0.5px;
+}
+
+.field-hint {
+  font-size: 10px;
+  margin-top: 4px;
+  display: block;
+}
+
+.field-hint-warning {
+  color: var(--orange);
+}
+
