@@ -12,6 +12,7 @@ import hashlib
 import hmac
 import uuid
 from datetime import datetime, timezone
+import math
 
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -164,6 +165,8 @@ async def activate_milestone(
         raise ValueError(f"Milestone is already {milestone.status}")
 
     milestone.status = "IN_PROGRESS"
+    if not milestone.started_at:
+        milestone.started_at = datetime.now(timezone.utc)
     escrow.state = "MILESTONE_ACTIVE"
 
     await _append_entry(
@@ -194,6 +197,7 @@ async def submit_work(
     milestone.submission = submission_text
     milestone.submission_url = submission_url
     milestone.status = "WORK_SUBMITTED"
+    milestone.submitted_at = datetime.now(timezone.utc)
     escrow.state = "WORK_SUBMITTED"
 
     await _append_entry(

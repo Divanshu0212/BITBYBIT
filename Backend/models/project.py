@@ -64,5 +64,7 @@ class Milestone(Base):
     submission: Mapped[str | None] = mapped_column(Text, nullable=True)
     submission_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     aqa_result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     project: Mapped["Project"] = relationship(back_populates="milestones")

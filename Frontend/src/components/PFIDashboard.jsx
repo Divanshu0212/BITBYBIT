@@ -5,8 +5,9 @@ import * as api from '../api';
 function GaugeCircle({ score, size = 100 }) {
   const radius = (size - 12) / 2;
   const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (score / 100) * circumference;
-  const color = score >= 70 ? 'var(--green)' : score >= 40 ? 'var(--yellow)' : 'var(--red)';
+  const percentage = Math.max(0, Math.min(1, (score - 300) / 700));
+  const offset = circumference - percentage * circumference;
+  const color = score >= 850 ? 'var(--cyan)' : score >= 720 ? 'var(--green)' : score >= 580 ? 'var(--yellow)' : score >= 450 ? '#f97316' : 'var(--red)';
 
   return (
     <svg width={size} height={size} className="gauge-svg">
@@ -137,26 +138,15 @@ export default function PFIDashboard({ state, dispatch, mode = 'self' }) {
               <GaugeCircle score={pfi.score} size={120} />
               <div className="pfi-info">
                 <h4>{state.user?.name}</h4>
-                <span className={`risk-badge risk-${(pfi.risk || 'moderate-risk').toLowerCase().replace(/\s/g, '-')}`}>
+                <span className={`risk-badge risk-${(pfi.risk || 'unproven').toLowerCase().replace(/\s/g, '-')}`}>
                   {pfi.risk}
                 </span>
               </div>
             </div>
             <div className="pfi-metrics">
               <div className="metric">
-                <span className="metric-label">Glicko Rating</span>
-                <span className="metric-value mono">{pfi.rating}</span>
-              </div>
-              <div className="metric">
-                <span className="metric-label">Rating Deviation</span>
-                <div className="rd-bar">
-                  <div className="rd-bar-fill" style={{ width: `${Math.min((pfi.rd || 350) / 350 * 100, 100)}%` }} />
-                </div>
-                <span className="metric-sub">{pfi.confidence} confidence</span>
-              </div>
-              <div className="metric">
-                <span className="metric-label">Volatility</span>
-                <span className="metric-value mono">{pfi.volatility}</span>
+                <span className="metric-label">Score Range</span>
+                <span className="metric-value mono">300 - 1000</span>
               </div>
               <div className="metric">
                 <span className="metric-label">Score History</span>
@@ -176,7 +166,6 @@ export default function PFIDashboard({ state, dispatch, mode = 'self' }) {
                   <th>Date</th>
                   <th>Event</th>
                   <th>Score</th>
-                  <th>Rating</th>
                 </tr>
               </thead>
               <tbody>
@@ -184,8 +173,7 @@ export default function PFIDashboard({ state, dispatch, mode = 'self' }) {
                   <tr key={i}>
                     <td className="mono">{new Date(h.timestamp).toLocaleDateString()}</td>
                     <td>{h.event_type.replace(/_/g, ' ')}</td>
-                    <td className="mono" style={{ color: h.score >= 60 ? 'var(--green)' : 'var(--red)' }}>{h.score}</td>
-                    <td className="mono">{h.rating}</td>
+                    <td className="mono" style={{ color: h.score >= 720 ? 'var(--green)' : h.score >= 580 ? 'var(--yellow)' : h.score >= 450 ? '#f97316' : 'var(--red)' }}>{h.score}</td>
                   </tr>
                 ))}
               </tbody>
@@ -224,8 +212,6 @@ export default function PFIDashboard({ state, dispatch, mode = 'self' }) {
                 <th>#</th>
                 <th>Freelancer</th>
                 <th>PFI Score</th>
-                <th>Glicko Rating</th>
-                <th>Confidence</th>
                 <th>Risk</th>
               </tr>
             </thead>
@@ -235,14 +221,12 @@ export default function PFIDashboard({ state, dispatch, mode = 'self' }) {
                   <td className="mono">{i + 1}</td>
                   <td>{fl.user_id}</td>
                   <td className="mono" style={{
-                    color: fl.score >= 70 ? 'var(--green)' : fl.score >= 40 ? 'var(--yellow)' : 'var(--red)'
+                    color: fl.score >= 720 ? 'var(--green)' : fl.score >= 580 ? 'var(--yellow)' : fl.score >= 450 ? '#f97316' : 'var(--red)'
                   }}>
                     {fl.score}
                   </td>
-                  <td className="mono">{fl.rating}</td>
-                  <td>{fl.confidence}</td>
                   <td>
-                    <span className={`risk-badge risk-${(fl.risk || 'moderate-risk').toLowerCase().replace(/\s/g, '-')}`}>
+                    <span className={`risk-badge risk-${(fl.risk || 'unproven').toLowerCase().replace(/\s/g, '-')}`}>
                       {fl.risk}
                     </span>
                   </td>

@@ -28,21 +28,13 @@ async def get_pfi_score(
     if not pfi:
         return {
             "user_id": str(user_id),
-            "score": 50,
-            "rating": 1500,
-            "rd": 350,
-            "volatility": 0.06,
-            "confidence": "Low",
-            "risk": "Moderate Risk",
+            "score": 300,
+            "risk": "Unproven",
         }
 
     return {
         "user_id": str(pfi.user_id),
         "score": pfi.score,
-        "rating": pfi.rating,
-        "rd": pfi.rd,
-        "volatility": pfi.volatility,
-        "confidence": pfi_service.get_confidence_label(pfi.rd),
         "risk": pfi_service.get_risk_label(pfi.score),
     }
 
@@ -58,9 +50,6 @@ async def get_leaderboard(
         {
             "user_id": str(e.user_id),
             "score": e.score,
-            "rating": e.rating,
-            "rd": e.rd,
-            "confidence": pfi_service.get_confidence_label(e.rd),
             "risk": pfi_service.get_risk_label(e.score),
         }
         for e in entries
@@ -77,7 +66,6 @@ async def get_pfi_history(
     return [
         {
             "score": h.score,
-            "rating": h.rating,
             "event_type": h.event_type,
             "timestamp": h.timestamp.isoformat(),
         }

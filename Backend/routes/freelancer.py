@@ -362,10 +362,20 @@ async def _update_freelancer_pfi(db: AsyncSession, user_id: uuid.UUID, project_i
         if m.aqa_result and "overallScore" in m.aqa_result:
             aqa_scores.append(m.aqa_result["overallScore"])
 
+    on_time_count = 0
+    for m in resolved:
+        if m.status in ("PAID_FULL", "PAID_PARTIAL"):
+            if m.started_at and m.submitted_at and m.estimated_days:
+                elapsed_days = (m.submitted_at - m.started_at).total_seconds() / 86400
+                if elapsed_days <= m.estimated_days:
+                    on_time_count += 1
+            elif m.status == "PAID_FULL":
+                on_time_count += 1
+
     history = {
         "completed_milestones": len([m for m in resolved if m.status in ("PAID_FULL", "PAID_PARTIAL")]),
         "total_milestones": len(milestones),
-        "on_time_deliveries": len([m for m in resolved if m.status == "PAID_FULL"]),
+        "on_time_deliveries": on_time_count,
         "total_deliveries": len(resolved),
         "aqa_scores": aqa_scores,
         "disputes": len([m for m in resolved if m.status == "REFUND_INITIATED"]),
@@ -384,14 +394,10 @@ async def get_own_pfi(
 ):
     pfi = await pfi_service.get_pfi_score(db, user.id)
     if not pfi:
-        return {"score": 50, "rating": 1500, "rd": 350, "volatility": 0.06, "confidence": "Low", "risk": "Moderate Risk"}
+        return {"score": 300, "risk": "Unproven"}
 
     return {
         "score": pfi.score,
-        "rating": pfi.rating,
-        "rd": pfi.rd,
-        "volatility": pfi.volatility,
-        "confidence": pfi_service.get_confidence_label(pfi.rd),
         "risk": pfi_service.get_risk_label(pfi.score),
     }
 
@@ -405,7 +411,6 @@ async def get_pfi_history(
     return [
         {
             "score": h.score,
-            "rating": h.rating,
             "event_type": h.event_type,
             "timestamp": h.timestamp.isoformat(),
         }

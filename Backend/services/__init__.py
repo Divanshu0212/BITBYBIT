@@ -17,7 +17,6 @@ from services.escrow import (
 )
 from services.pfi import (
     calculate_base_score,
-    apply_glicko2,
     compute_final_pfi,
     update_pfi_for_milestone,
     get_pfi_score,

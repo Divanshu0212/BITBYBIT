@@ -21,144 +21,58 @@ from models.pfi import PFIScore, PFIHistory
 # ── Configuration ────────────────────────────────────────────────────────
 
 PFI_WEIGHTS = {
-    "milestone_accuracy": 0.35,
-    "deadline_adherence": 0.25,
-    "aqa_score_average": 0.25,
-    "dispute_rate": 0.15,
+    "completion_history": 0.35,  
+    "quality_metrics": 0.30,     
+    "reliability": 0.20,         
+    "experience": 0.15,          
 }
 
-GLICKO2_DEFAULTS = {
-    "initial_rating": 1500,
-    "initial_rd": 350,
-    "initial_volatility": 0.06,
-    "tau": 0.5,
-}
+# ── Config ──────────────────────────────────────────────────────────────
 
-
-# ── Base Score ───────────────────────────────────────────────────────────
-
-def calculate_base_score(history: dict) -> int:
+def calculate_base_score(history: dict) -> float:
     """
-    Calculate weighted base PFI score.
-    history keys: completed_milestones, total_milestones, on_time_deliveries,
-                  total_deliveries, aqa_scores (list[int]), disputes, total_jobs
+    Calculate weighted base PFI score for credit-card style system.
+    Returns a float from 0-100 which gets mapped to 200-900 later.
     """
     w = PFI_WEIGHTS
 
-    milestone_accuracy = (
-        (history["completed_milestones"] / history["total_milestones"]) * 100
-        if history["total_milestones"] > 0 else 50
-    )
-    deadline_adherence = (
-        (history["on_time_deliveries"] / history["total_deliveries"]) * 100
-        if history["total_deliveries"] > 0 else 50
-    )
+    total_jobs = history.get("total_jobs", 0)
+    disputes = history.get("disputes", 0)
+    completed = history.get("completed_milestones", 0)
+    total_ms = history.get("total_milestones", 0)
+
+    # 1. Completion & Dispute History
+    ms_accuracy = (completed / total_ms * 100) if total_ms > 0 else 50
+    dispute_penalty = (disputes / total_jobs * 100) if total_jobs > 0 else 0
+    completion_score = max(0, ms_accuracy - (dispute_penalty * 2))
+
+    # 2. Quality Metrics (AQA)
     aqa_scores = history.get("aqa_scores", [])
-    aqa_average = (
-        sum(aqa_scores) / len(aqa_scores)
-        if aqa_scores else 50
+    quality_score = sum(aqa_scores) / len(aqa_scores) if aqa_scores else 50
+
+    # 3. Reliability (Deadlines)
+    deliveries = history.get("total_deliveries", 0)
+    on_time = history.get("on_time_deliveries", 0)
+    reliability_score = (on_time / deliveries * 100) if deliveries > 0 else 50
+
+    # 4. Experience / Tenure
+    experience_score = min(100, (total_ms / 50) * 100)
+
+    base_100 = (
+        completion_score * w["completion_history"]
+        + quality_score * w["quality_metrics"]
+        + reliability_score * w["reliability"]
+        + experience_score * w["experience"]
     )
-    dispute_rate = (
-        (1 - history["disputes"] / history["total_jobs"]) * 100
-        if history["total_jobs"] > 0 else 50
-    )
-
-    return round(
-        milestone_accuracy * w["milestone_accuracy"]
-        + deadline_adherence * w["deadline_adherence"]
-        + aqa_average * w["aqa_score_average"]
-        + dispute_rate * w["dispute_rate"]
-    )
-
-
-# ── Glicko-2 ─────────────────────────────────────────────────────────────
-
-def apply_glicko2(
-    rating: int, rd: int, volatility: float, outcomes: list[dict]
-) -> dict:
-    """
-    Simplified Glicko-2 rating update.
-    outcomes: list of { "score": 0-1, "expected": 0-1 }
-    Returns: { "rating": int, "rd": int, "volatility": float }
-    """
-    tau = GLICKO2_DEFAULTS["tau"]
-
-    if not outcomes:
-        new_rd = min(math.sqrt(rd * rd + volatility * volatility), 350)
-        return {"rating": rating, "rd": round(new_rd), "volatility": volatility}
-
-    # Convert to Glicko-2 scale
-    mu = (rating - 1500) / 173.7178
-    phi = rd / 173.7178
-
-    # Compute variance
-    v_inv = 0.0
-    delta_sum = 0.0
-    for o in outcomes:
-        e = o["expected"]
-        g = 1 / math.sqrt(1 + 3 * phi * phi / (math.pi * math.pi))
-        v_inv += g * g * e * (1 - e)
-        delta_sum += g * (o["score"] - e)
-
-    v = 1 / max(v_inv, 0.001)
-    delta = v * delta_sum
-
-    # Simplified volatility update (Illinois algorithm)
-    a = math.log(volatility * volatility)
-    delta_sq = delta * delta
-    phi_sq = phi * phi
-
-    def f(x):
-        ex = math.exp(x)
-        denom = 2 * (phi_sq + v + ex) ** 2
-        return (ex * (delta_sq - phi_sq - v - ex)) / denom - (x - a) / (tau * tau)
-
-    big_a = a
-    if delta_sq > phi_sq + v:
-        big_b = math.log(delta_sq - phi_sq - v)
-    else:
-        k = 1
-        while f(a - k * tau) < 0:
-            k += 1
-        big_b = a - k * tau
-
-    f_a = f(big_a)
-    f_b = f(big_b)
-    new_sigma = volatility
-
-    for _ in range(20):
-        c = big_a + (big_a - big_b) * f_a / (f_b - f_a)
-        f_c = f(c)
-        if f_c * f_b < 0:
-            pass  # f_a stays
-        else:
-            f_a = f_a / 2
-        new_sigma = math.exp(c / 2)
-        if abs(c - big_a) < 0.0001:
-            break
-        big_a = c
-        f_a = f_c
-
-    new_sigma = max(0.01, min(new_sigma, 0.2))
-
-    # Update phi and mu
-    phi_star = math.sqrt(phi_sq + new_sigma * new_sigma)
-    new_phi = 1 / math.sqrt(1 / (phi_star * phi_star) + 1 / v)
-    new_mu = mu + new_phi * new_phi * (delta / v)
-
-    return {
-        "rating": round(173.7178 * new_mu + 1500),
-        "rd": round(173.7178 * new_phi),
-        "volatility": round(new_sigma, 3),
-    }
+    return base_100
 
 
 # ── Final PFI ────────────────────────────────────────────────────────────
 
-def compute_final_pfi(base_score: int, glicko_rating: int) -> int:
-    """Combine base score (60%) and normalised Glicko-2 rating (40%)."""
-    norm_glicko = max(0, min(100, ((glicko_rating - 1000) / 1000) * 100))
-    return round(0.6 * base_score + 0.4 * norm_glicko)
+def compute_final_pfi(base_100: float) -> int:
+    """Map base score (0-100) to the 300-1000 robust credit score range."""
+    pfi_score = 300 + (base_100 / 100) * 700
+    return round(max(300, min(1000, pfi_score)))
 
 
 def get_confidence_label(rd: int) -> str:
@@ -170,15 +84,15 @@ def get_confidence_label(rd: int) -> str:
 
 
 def get_risk_label(score: int) -> str:
-    if score >= 80:
-        return "Excellent"
-    if score >= 60:
-        return "Low Risk"
-    if score >= 40:
-        return "Moderate Risk"
-    if score >= 20:
-        return "High Risk"
-    return "Extreme Risk"
+    if score >= 850:
+        return "Elite"
+    if score >= 720:
+        return "Trusted"
+    if score >= 580:
+        return "Established"
+    if score >= 450:
+        return "Developing"
+    return "Unproven"
 
 
 # ── Database Operations ──────────────────────────────────────────────────
@@ -204,22 +118,16 @@ async def update_pfi_for_milestone(
         await db.flush()
 
     base = calculate_base_score(history)
-    aqa_scores = history.get("aqa_scores", [])
-    outcomes = [{"score": s / 100, "expected": 0.5} for s in aqa_scores]
-    glicko = apply_glicko2(pfi.rating, pfi.rd, pfi.volatility, outcomes)
-    final = compute_final_pfi(base, glicko["rating"])
+    final = compute_final_pfi(base)
 
     pfi.score = final
-    pfi.rating = glicko["rating"]
-    pfi.rd = glicko["rd"]
-    pfi.volatility = glicko["volatility"]
     pfi.updated_at = datetime.now(timezone.utc)
 
     # Record history
     hist = PFIHistory(
         user_id=user_id,
         score=final,
-        rating=glicko["rating"],
+        rating=1500,  # Legacy field unused
         event_type=event_type,
     )
     db.add(hist)
