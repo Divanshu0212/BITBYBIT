@@ -15,7 +15,7 @@ class PFIScore(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False
     )
-    score: Mapped[int] = mapped_column(Integer, default=50)
+    score: Mapped[int] = mapped_column(Integer, default=500)
     rating: Mapped[int] = mapped_column(Integer, default=1500)  # Glicko-2 rating
     rd: Mapped[int] = mapped_column(Integer, default=350)  # Rating deviation
     volatility: Mapped[float] = mapped_column(Float, default=0.06)

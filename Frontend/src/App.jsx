@@ -4,6 +4,7 @@ import { ACTIONS } from './store/actions';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { clearAuth, getToken } from './api';
 import { LineChart, Trophy, Search, Mail, Briefcase, BarChart2, LogOut, Zap, Building, User } from 'lucide-react';
+import { ModeToggle } from './components/ModeToggle';
 
 import AuthPage from './components/AuthPage';
 import EscrowLedger from './components/EscrowLedger';
@@ -12,6 +13,9 @@ import FreelancerDashboard from './components/FreelancerDashboard';
 import PFIDashboard from './components/PFIDashboard';
 import AnalyticsPanel from './components/AnalyticsPanel';
 import HITLOverride from './components/HITLOverride';
+import { Button } from './components/ui/button';
+import { Card, CardHeader, CardTitle, CardContent } from './components/ui/card';
+import { Badge } from './components/ui/badge';
 
 export default function App() {
   const [state, dispatch] = useReducer(reducer, initialState);
@@ -68,6 +72,7 @@ export default function App() {
           <span className="logo-tagline">Autonomous AI Project & Payment Intermediary</span>
         </div>
         <div className="header-right">
+          <ModeToggle />
           <div className="user-info">
             <span className="user-role-badge">
               {isEmployer ? <Building size={14} className="inline-block mr-1" /> : <User size={14} className="inline-block mr-1" />}
@@ -75,9 +80,9 @@ export default function App() {
             </span>
             <span className="user-name">{state.user.name}</span>
           </div>
-          <button className="btn btn-sm btn-ghost" onClick={handleLogout} title="Sign out" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <Button variant="ghost" size="sm" onClick={handleLogout} title="Sign out" className="flex items-center gap-1.5 ml-2">
             <LogOut size={16} /> Logout
-          </button>
+          </Button>
         </div>
       </header>
 
