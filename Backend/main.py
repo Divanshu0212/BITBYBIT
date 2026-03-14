@@ -19,6 +19,8 @@ from routes.freelancer import router as freelancer_router
 from routes.escrow import router as escrow_router
 from routes.ai import router as ai_router
 from routes.pfi import router as pfi_router
+from routes.content import router as content_router
+from routes.design import router as design_router
 
 
 @asynccontextmanager
@@ -57,6 +59,8 @@ app.include_router(freelancer_router)
 app.include_router(escrow_router)
 app.include_router(ai_router)
 app.include_router(pfi_router)
+app.include_router(content_router)
+app.include_router(design_router)
 
 
 # ── Health check ─────────────────────────────────────────────────────────

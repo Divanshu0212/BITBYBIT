@@ -61,14 +61,15 @@ async def get_current_user(
     return user
 
 
-def require_role(required_role: str):
-    """Dependency factory: restricts endpoint to a specific role."""
+def require_role(*allowed_roles: str):
+    """Dependency factory: restricts endpoint to one or more roles."""
 
     async def _check(user: Annotated[User, Depends(get_current_user)]) -> User:
-        if user.role != required_role:
+        if user.role not in allowed_roles:
+            roles_str = " or ".join(f"'{r}'" for r in allowed_roles)
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"This endpoint requires the '{required_role}' role",
+                detail=f"This endpoint requires the {roles_str} role",
             )
         return user
 

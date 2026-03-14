@@ -23,6 +23,9 @@ class Settings:
     SONARQUBE_URL: str = os.getenv("SONARQUBE_URL", "")
     SONARQUBE_TOKEN: str = os.getenv("SONARQUBE_TOKEN", "")
 
+    # Figma API (optional — enriches design verification with file metadata)
+    FIGMA_ACCESS_TOKEN: str = os.getenv("FIGMA_ACCESS_TOKEN", "")
+
     CORS_ORIGINS: list[str] = [
         origin.strip()
         for origin in os.getenv(

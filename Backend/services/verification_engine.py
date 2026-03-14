@@ -18,6 +18,8 @@ import re
 from typing import Literal
 
 from services import ai as ai_service
+from services import content_verifier
+from services import design_verifier
 
 logger = logging.getLogger(__name__)
 
@@ -320,7 +322,27 @@ async def orchestrate_verification(
             project_description=project_description,
         )
 
-    # 3. Standard path (heuristic + LLM)
+    # 3. Content modality — use specialised 7-step content pipeline
+    if modality == "content":
+        return await _run_content_pipeline(
+            milestone_title=milestone_title,
+            milestone_domain=milestone_domain,
+            acceptance_criteria=acceptance_criteria,
+            submission=submission,
+            api_key=api_key,
+        )
+
+    # 4. Design modality — use specialised 5-dimension design pipeline
+    if modality == "design":
+        return await _run_design_pipeline(
+            milestone_title=milestone_title,
+            milestone_domain=milestone_domain,
+            acceptance_criteria=acceptance_criteria,
+            submission=submission,
+            api_key=api_key,
+        )
+
+    # 5. Standard path (heuristic + LLM) for mixed/code-without-repo
     return await _run_standard_pipeline(
         milestone_title=milestone_title,
         milestone_domain=milestone_domain,
@@ -330,6 +352,220 @@ async def orchestrate_verification(
         submission=submission,
         api_key=api_key,
     )
+
+
+async def _run_content_pipeline(
+    milestone_title: str,
+    milestone_domain: str,
+    acceptance_criteria: list,
+    submission: str,
+    api_key: str | None,
+) -> dict:
+    """
+    Specialised content verification using the 7-step CMS pipeline.
+    Delegates to content_verifier and maps the result back to AQA format.
+    """
+    logger.info(f"Running content verification pipeline for: {milestone_title}")
+
+    keywords = []
+    sections = []
+    dod = ""
+    for ac in acceptance_criteria:
+        if isinstance(ac, dict):
+            criterion = ac.get("criterion", "")
+            sections.append(criterion)
+            for word in criterion.split():
+                if len(word) > 5 and word.isalpha():
+                    keywords.append(word.lower())
+            if "definition" in criterion.lower() or "done" in criterion.lower():
+                dod = criterion
+        elif isinstance(ac, str):
+            sections.append(ac)
+
+    requirements = {
+        "milestone_title": milestone_title,
+        "milestone_description": milestone_domain,
+        "definition_of_done": dod,
+        "required_keywords": list(set(keywords))[:20],
+        "target_audience": "general",
+        "required_sections": sections[:10],
+    }
+
+    result = await content_verifier.verify_content(
+        project_id="",
+        milestone_id="",
+        milestone_requirements=requirements,
+        freelancer_submission=submission,
+        api_key=api_key,
+    )
+
+    scores = result.get("scores", {})
+    cms = result.get("composite_milestone_score", 0)
+    verdict = result.get("verdict", "UNMET")
+
+    if verdict == "FULLY_COMPLETED":
+        completion_status = "FULLY_COMPLETED"
+        payment_rec = "FULL_RELEASE"
+        pro_rated = 100
+    elif verdict == "PARTIALLY_COMPLETED":
+        completion_status = "PARTIALLY_COMPLETED"
+        payment_rec = "PRO_RATED"
+        pro_rated = int(result.get("payout_percentage", cms))
+    else:
+        completion_status = "UNMET"
+        payment_rec = "REFUND"
+        pro_rated = 0
+
+    confidence = result.get("confidence", 0.5)
+    decision_action = "FULL_PAY" if pro_rated == 100 else ("PARTIAL_PAY" if pro_rated > 0 else "REFUND")
+    if confidence < 0.7 and pro_rated < 100:
+        decision_action = "HITL"
+
+    return {
+        "overallScore": int(cms),
+        "completionStatus": completion_status,
+        "paymentRecommendation": payment_rec,
+        "proRatedPercentage": pro_rated,
+        "percentComplete": int(cms),
+        "modality": "content",
+        "confidence": confidence,
+        "evidenceCompleteness": min(1.0, len([s for s in scores.values() if s > 0]) / 7),
+        "modalityScores": {
+            "deterministic": {
+                "structure": scores.get("structure", 0),
+                "originality": scores.get("originality", 0),
+                "grammar": scores.get("grammar", 0),
+                "keyword_coverage": scores.get("keyword_coverage", 0),
+            },
+            "llm": {
+                "requirement_coverage": scores.get("requirement_coverage", 0),
+                "content_quality": scores.get("content_quality", 0),
+                "readability": scores.get("readability", 0),
+            },
+        },
+        "criteriaEvaluation": [
+            {"criterion": k, "met": v >= 70, "score": v, "feedback": "", "evidence_present": v > 0}
+            for k, v in scores.items()
+        ],
+        "detailedFeedback": "; ".join(result.get("improvement_suggestions", [])),
+        "remediationChecklist": result.get("improvement_suggestions", []),
+        "riskFlags": result.get("major_issues", []),
+        "decision": {
+            "action": decision_action,
+            "reason": f"CMS {cms:.0f}/100 — {verdict}",
+            "recommended_pct": pro_rated,
+        },
+        "contentVerification": result,
+    }
+
+
+async def _run_design_pipeline(
+    milestone_title: str,
+    milestone_domain: str,
+    acceptance_criteria: list,
+    submission: str,
+    api_key: str | None,
+) -> dict:
+    """
+    Specialised design verification using the 5-dimension CMS pipeline.
+    Delegates to design_verifier and maps the result back to AQA format.
+    """
+    logger.info(f"Running design verification pipeline for: {milestone_title}")
+
+    required_screens = []
+    required_components = []
+    dod = ""
+    screen_kw = ("screen", "page", "view", "layout", "mockup", "wireframe", "design")
+    comp_kw = ("component", "button", "form", "icon", "nav", "card", "modal", "input")
+
+    for ac in acceptance_criteria:
+        criterion = ""
+        if isinstance(ac, dict):
+            criterion = ac.get("criterion", "")
+        elif isinstance(ac, str):
+            criterion = ac
+
+        crit_lower = criterion.lower()
+        if any(kw in crit_lower for kw in screen_kw):
+            required_screens.append(criterion)
+        if any(kw in crit_lower for kw in comp_kw):
+            required_components.append(criterion)
+        if "definition" in crit_lower or "done" in crit_lower:
+            dod = criterion
+
+    requirements = {
+        "milestone_title": milestone_title,
+        "milestone_description": milestone_domain,
+        "definition_of_done": dod,
+        "required_screens": required_screens[:15],
+        "required_components": required_components[:15],
+        "style_reference": None,
+    }
+
+    result = await design_verifier.verify_design(
+        project_id="",
+        milestone_id="",
+        milestone_requirements=requirements,
+        freelancer_submission=submission,
+        api_key=api_key,
+    )
+
+    scores = result.get("scores", {})
+    cms = result.get("composite_milestone_score", 0)
+    verdict = result.get("verdict", "UNMET")
+
+    if verdict == "FULLY_COMPLETED":
+        completion_status = "FULLY_COMPLETED"
+        payment_rec = "FULL_RELEASE"
+        pro_rated = 100
+    elif verdict == "PARTIALLY_COMPLETED":
+        completion_status = "PARTIALLY_COMPLETED"
+        payment_rec = "PRO_RATED"
+        pro_rated = int(result.get("payout_percentage", cms))
+    else:
+        completion_status = "UNMET"
+        payment_rec = "REFUND"
+        pro_rated = 0
+
+    confidence = result.get("confidence", 0.5)
+    decision_action = "FULL_PAY" if pro_rated == 100 else ("PARTIAL_PAY" if pro_rated > 0 else "REFUND")
+    if confidence < 0.7 and pro_rated < 100:
+        decision_action = "HITL"
+
+    return {
+        "overallScore": int(cms),
+        "completionStatus": completion_status,
+        "paymentRecommendation": payment_rec,
+        "proRatedPercentage": pro_rated,
+        "percentComplete": int(cms),
+        "modality": "design",
+        "confidence": confidence,
+        "evidenceCompleteness": min(1.0, len([s for s in scores.values() if s > 0]) / 5),
+        "modalityScores": {
+            "deterministic": {
+                "accessibility": scores.get("accessibility", 0),
+                "responsive_completeness": scores.get("responsive_completeness", 0),
+                "export_readiness": scores.get("export_readiness", 0),
+            },
+            "llm": {
+                "requirements_coverage": scores.get("requirements_coverage", 0),
+                "visual_consistency": scores.get("visual_consistency", 0),
+            },
+        },
+        "criteriaEvaluation": [
+            {"criterion": k, "met": v >= 70, "score": v, "feedback": "", "evidence_present": v > 0}
+            for k, v in scores.items()
+        ],
+        "detailedFeedback": "; ".join(result.get("improvement_suggestions", [])),
+        "remediationChecklist": result.get("improvement_suggestions", []),
+        "riskFlags": result.get("major_issues", []),
+        "decision": {
+            "action": decision_action,
+            "reason": f"CMS {cms:.0f}/100 — {verdict}",
+            "recommended_pct": pro_rated,
+        },
+        "designVerification": result,
+    }
 
 
 async def _run_code_pipeline(
