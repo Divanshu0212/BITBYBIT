@@ -297,16 +297,23 @@ async def submit_work(
         full_submission += f"\n\nURL: {data.submission_url}"
 
     try:
+        # Build structured acceptance criteria from milestone verification profile
+        structured_criteria = milestone.acceptance_criteria or []
+        v_profile = milestone.verification_profile or {}
+        if v_profile.get("structured_criteria"):
+            structured_criteria = v_profile["structured_criteria"]
+
         aqa_result = await verification_engine.orchestrate_verification(
             milestone_title=milestone.title,
             milestone_domain=milestone.domain or "General",
             task_type=milestone.task_type,
-            acceptance_criteria=milestone.acceptance_criteria or [],
+            acceptance_criteria=structured_criteria,
             scoring_weights=milestone.scoring_weights,
             submission=full_submission,
             api_key=api_key,
             repo_url=data.repo_url,
             commit_hash=data.commit_hash,
+            project_description=project.description,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Verification failed: {exc}")

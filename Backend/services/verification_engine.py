@@ -296,6 +296,7 @@ async def orchestrate_verification(
     api_key: str | None = None,
     repo_url: str | None = None,
     commit_hash: str | None = None,
+    project_description: str | None = None,
 ) -> dict:
     """
     Main entry point: classify → deterministic checks → LLM eval → score → decide.
@@ -316,6 +317,7 @@ async def orchestrate_verification(
             repo_url=repo_url,
             commit_hash=commit_hash,
             api_key=api_key,
+            project_description=project_description,
         )
 
     # 3. Standard path (heuristic + LLM)
@@ -339,10 +341,12 @@ async def _run_code_pipeline(
     repo_url: str,
     commit_hash: str | None,
     api_key: str | None,
+    project_description: str | None = None,
 ) -> dict:
     """
     Full 4-layer code verification pipeline:
     L1: Static (AST) → L2: Runtime (tests) → L3: SonarQube → L4: LLM Semantic
+    Now includes: description matching + actual code context for LLM.
     """
     from services import code_verifier
 
@@ -353,6 +357,8 @@ async def _run_code_pipeline(
             repo_url=repo_url,
             commit_hash=commit_hash,
             milestone_id=milestone_title.replace(" ", "_")[:20],
+            project_description=project_description,
+            acceptance_criteria=acceptance_criteria,
         )
     except ValueError as exc:
         logger.error(f"Code pipeline failed: {exc}")
@@ -367,13 +373,29 @@ async def _run_code_pipeline(
             api_key=api_key,
         )
 
-    # Layer 4: LLM Semantic Review
-    logger.info("Running Layer 4: LLM Semantic Review")
+    # Layer 4: LLM Semantic Review — now with actual source code context
+    logger.info("Running Layer 4: LLM Semantic Review (with code context)")
+
+    # Build enriched submission with actual source code from the cloned repo
+    code_summary = pipeline_result.get("code_summary", "")
+    enriched_submission = submission
+    if code_summary:
+        enriched_submission = (
+            f"[FREELANCER SUBMISSION]\n{submission}\n\n"
+            f"[ACTUAL SOURCE CODE FROM REPOSITORY]\n{code_summary}"
+        )
+    # Add project description context for description matching
+    if project_description:
+        enriched_submission = (
+            f"[CLIENT PROJECT DESCRIPTION]\n{project_description}\n\n"
+            + enriched_submission
+        )
+
     llm_result = await ai_service.evaluate_submission(
         milestone_title=milestone_title,
         milestone_domain=milestone_domain,
         acceptance_criteria=acceptance_criteria,
-        submission=submission,
+        submission=enriched_submission,
         api_key=api_key,
         task_type="code",
         scoring_weights=scoring_weights,
@@ -471,8 +493,10 @@ async def _run_code_pipeline(
                 "sonarqube": layer_results.get("sonarqube", {}).get("details", {}),
                 "security": layer_results.get("security", {}).get("details", {}),
                 "dependency": layer_results.get("dependency", {}).get("details", {}),
+                "description_match": layer_results.get("description_match", {}).get("details", {}),
             },
             "securityIssues": layer_results.get("security", {}).get("issues", []),
+            "descriptionMatchScores": layer_results.get("description_match", {}).get("scores", {}),
             "pfiSignals": pipeline_result.get("pfi_signals", {}),
         },
         # Dispute evidence

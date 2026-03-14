@@ -287,7 +287,14 @@ def _build_evaluation_prompt(
         modality_guidance = (
             "Focus on: correctness (40%), security (20%), test coverage (20%), maintainability (20%).\n"
             "Look for: working logic, error handling, security patterns, test presence, clean structure.\n"
-            "If code artifacts are present, evaluate them. If only descriptions, note evidence gaps."
+            "IMPORTANT: You will receive ACTUAL SOURCE CODE from the cloned repository.\n"
+            "- Review the code itself, not just the freelancer's description.\n"
+            "- Compare the implementation against the CLIENT PROJECT DESCRIPTION and acceptance criteria.\n"
+            "- Flag any mismatches between what was requested and what was actually implemented.\n"
+            "- Evaluate code quality: naming conventions, modularity, DRY principles, proper error handling.\n"
+            "- Check if core business logic is implemented vs placeholder/stub code.\n"
+            "- Verify that the code structure matches the project type (API routes, components, models, etc.).\n"
+            "- If code artifacts are present, evaluate them deeply. If only descriptions with no code, penalize heavily."
         )
     elif task_type == "content":
         modality_guidance = (

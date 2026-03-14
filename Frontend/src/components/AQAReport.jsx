@@ -199,6 +199,38 @@ export default function AQAReport({ result, milestoneIndex, milestone }) {
               </span>
             </div>
           )}
+
+          {/* Description Match / Requirements Fulfillment */}
+          {codePipeline.descriptionMatchScores && Object.keys(codePipeline.descriptionMatchScores).length > 0 && (
+            <div className="description-match-section">
+              <h6>📋 Requirements Fulfillment</h6>
+              <div className="desc-match-grid">
+                {[
+                  { key: 'readme_match', label: 'README Match', icon: '📄' },
+                  { key: 'structure_match', label: 'Project Structure', icon: '🏗️' },
+                  { key: 'keyword_coverage', label: 'Technical Keywords', icon: '🔑' },
+                  { key: 'criteria_fulfillment', label: 'Criteria Coverage', icon: '✅' },
+                ].map(item => {
+                  const score = codePipeline.descriptionMatchScores[item.key];
+                  if (score === undefined) return null;
+                  return (
+                    <div key={item.key} className="desc-match-item">
+                      <div className="desc-match-header">
+                        <span>{item.icon} {item.label}</span>
+                        <span className="mono" style={{ color: scoreColor(score) }}>{score}/100</span>
+                      </div>
+                      <div className="crit-bar mini">
+                        <div className="crit-bar-fill" style={{ width: `${score}%`, background: scoreColor(score) }} />
+                      </div>
+                      {codePipeline.layerDetails?.description_match?.[item.key] && (
+                        <span className="desc-match-detail">{codePipeline.layerDetails.description_match[item.key]}</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

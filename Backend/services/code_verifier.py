@@ -531,7 +531,7 @@ def run_test_suite(repo_path: Path, language: str) -> dict:
 
 
 def _run_python_tests(repo_path: Path) -> tuple[dict, dict]:
-    """Run pytest if available."""
+    """Run pytest if available. Installs dependencies first for cloned repos."""
     scores = {}
     details = {}
 
@@ -539,7 +539,15 @@ def _run_python_tests(repo_path: Path) -> tuple[dict, dict]:
     test_files = list(repo_path.rglob("test_*.py")) + list(repo_path.rglob("*_test.py"))
     tests_dir = repo_path / "tests"
     if tests_dir.exists():
-        test_files.extend(tests_dir.rglob("*.py"))
+        test_files.extend(f for f in tests_dir.rglob("*.py") if f not in test_files)
+    # Also check conftest.py as indicator of test infrastructure
+    conftest_files = list(repo_path.rglob("conftest.py"))
+
+    # Filter out venv / hidden / __pycache__ from test files
+    test_files = [
+        f for f in test_files
+        if not any(p.startswith(".") or p in ("venv", ".venv", "__pycache__", "node_modules") for p in f.relative_to(repo_path).parts)
+    ]
 
     if not test_files:
         scores["test_presence"] = 0
@@ -551,15 +559,45 @@ def _run_python_tests(repo_path: Path) -> tuple[dict, dict]:
     scores["test_presence"] = 100
     details["test_presence"] = f"{len(test_files)} test files found"
 
-    # Try running pytest with JSON output
     env = {
         **os.environ,
         "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONPATH": str(repo_path),
     }
 
+    # Install dependencies before running tests
+    req_file = repo_path / "requirements.txt"
+    pyproject = repo_path / "pyproject.toml"
     try:
-        # First try: pytest
+        if req_file.exists():
+            logger.info("Installing Python deps from requirements.txt")
+            subprocess.run(
+                ["pip", "install", "--no-cache-dir", "-q", "-r", str(req_file)],
+                cwd=str(repo_path),
+                capture_output=True,
+                text=True,
+                timeout=90,
+                env=env,
+            )
+        elif pyproject.exists():
+            logger.info("Installing Python deps from pyproject.toml")
+            subprocess.run(
+                ["pip", "install", "--no-cache-dir", "-q", "-e", str(repo_path)],
+                cwd=str(repo_path),
+                capture_output=True,
+                text=True,
+                timeout=90,
+                env=env,
+            )
+        # Also install pytest itself if not available
+        subprocess.run(
+            ["pip", "install", "--no-cache-dir", "-q", "pytest"],
+            capture_output=True, text=True, timeout=30, env=env,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as exc:
+        logger.warning(f"Dependency installation warning: {exc}")
+
+    try:
         result = subprocess.run(
             ["python", "-m", "pytest", "--tb=short", "-q", "--no-header"],
             cwd=str(repo_path),
@@ -570,12 +608,8 @@ def _run_python_tests(repo_path: Path) -> tuple[dict, dict]:
         )
 
         output = result.stdout + result.stderr
-        # Parse pytest summary line: "X passed, Y failed, Z errors"
-        passed = len(re.findall(r"(\d+) passed", output))
-        failed_count = len(re.findall(r"(\d+) failed", output))
-        error_count = len(re.findall(r"(\d+) error", output))
 
-        # Extract counts
+        # Extract counts from pytest output
         pass_match = re.search(r"(\d+) passed", output)
         fail_match = re.search(r"(\d+) failed", output)
 
@@ -606,31 +640,59 @@ def _run_python_tests(repo_path: Path) -> tuple[dict, dict]:
 
 
 def _run_js_tests(repo_path: Path) -> tuple[dict, dict]:
-    """Run npm test / jest if available."""
+    """Run npm test / jest if available. Handles monorepos."""
     scores = {}
     details = {}
 
-    pkg_json = repo_path / "package.json"
-    if not pkg_json.exists():
-        scores["test_presence"] = 0
-        details["test_presence"] = "No package.json found"
-        scores["test_execution"] = 0
-        details["test_execution"] = "Skipped — no package.json"
-        return scores, details
+    # Find all package.json files (monorepo support)
+    all_pkg_jsons = [repo_path / "package.json"]
+    for sub in ("frontend", "backend", "server", "client", "app", "web", "api"):
+        sub_pkg = repo_path / sub / "package.json"
+        if sub_pkg.exists():
+            all_pkg_jsons.append(sub_pkg)
 
-    # Check if test script exists
-    try:
-        pkg = json.loads(pkg_json.read_text())
-        scripts = pkg.get("scripts", {})
-        has_test = "test" in scripts and scripts["test"] != 'echo "Error: no test specified" && exit 1'
-    except Exception:
-        has_test = False
+    # Find the best package.json with a test script
+    best_pkg_dir = None
+    has_test = False
+    for pkg_path in all_pkg_jsons:
+        if not pkg_path.exists():
+            continue
+        try:
+            pkg = json.loads(pkg_path.read_text())
+            scripts = pkg.get("scripts", {})
+            if "test" in scripts and scripts["test"] != 'echo "Error: no test specified" && exit 1':
+                best_pkg_dir = pkg_path.parent
+                has_test = True
+                break
+        except Exception:
+            continue
 
-    # Check for test files
-    test_patterns = ["**/*.test.js", "**/*.spec.js", "**/*.test.ts", "**/*.spec.ts", "**/__tests__/**"]
+    if not best_pkg_dir:
+        # Fallback to root if any package.json exists
+        if (repo_path / "package.json").exists():
+            best_pkg_dir = repo_path
+        else:
+            scores["test_presence"] = 0
+            details["test_presence"] = "No package.json found"
+            scores["test_execution"] = 0
+            details["test_execution"] = "Skipped — no package.json"
+            return scores, details
+
+    # Check for test files recursively (rglob, not glob)
     test_files = []
-    for pattern in test_patterns:
-        test_files.extend(repo_path.glob(pattern))
+    for ext in ("*.test.js", "*.spec.js", "*.test.ts", "*.spec.ts", "*.test.jsx", "*.spec.jsx", "*.test.tsx", "*.spec.tsx"):
+        for f in repo_path.rglob(ext):
+            parts = f.relative_to(repo_path).parts
+            if not any(p.startswith(".") or p in ("node_modules", "dist", "build", ".next") for p in parts):
+                test_files.append(f)
+    # Also check __tests__ directories
+    for tests_dir in repo_path.rglob("__tests__"):
+        parts = tests_dir.relative_to(repo_path).parts
+        if not any(p.startswith(".") or p in ("node_modules", "dist", "build") for p in parts):
+            test_files.extend(tests_dir.rglob("*.js"))
+            test_files.extend(tests_dir.rglob("*.ts"))
+            test_files.extend(tests_dir.rglob("*.jsx"))
+            test_files.extend(tests_dir.rglob("*.tsx"))
 
     if not has_test and not test_files:
         scores["test_presence"] = 0
@@ -643,22 +705,23 @@ def _run_js_tests(repo_path: Path) -> tuple[dict, dict]:
     details["test_presence"] = f"Test script found, {len(test_files)} test files"
 
     # Install deps if node_modules missing
-    if not (repo_path / "node_modules").exists():
+    if not (best_pkg_dir / "node_modules").exists():
         try:
+            logger.info(f"Installing npm deps in {best_pkg_dir}")
             subprocess.run(
                 ["npm", "install", "--ignore-scripts"],
-                cwd=str(repo_path),
+                cwd=str(best_pkg_dir),
                 capture_output=True,
-                timeout=90,
+                timeout=120,
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(f"npm install warning: {exc}")
 
     # Run tests
     try:
         result = subprocess.run(
             ["npm", "test", "--", "--ci", "--watchAll=false"],
-            cwd=str(repo_path),
+            cwd=str(best_pkg_dir),
             capture_output=True,
             text=True,
             timeout=TEST_TIMEOUT,
@@ -670,6 +733,11 @@ def _run_js_tests(repo_path: Path) -> tuple[dict, dict]:
         # Parse Jest output
         pass_match = re.search(r"Tests:\s+(\d+) passed", output)
         fail_match = re.search(r"Tests:\s+(\d+) failed", output)
+        # Also try pytest-style output (some JS projects use pytest)
+        if not pass_match:
+            pass_match = re.search(r"(\d+) passing", output)
+        if not fail_match:
+            fail_match = re.search(r"(\d+) failing", output)
 
         passed_n = int(pass_match.group(1)) if pass_match else 0
         failed_n = int(fail_match.group(1)) if fail_match else 0
@@ -678,6 +746,7 @@ def _run_js_tests(repo_path: Path) -> tuple[dict, dict]:
         if total > 0:
             pass_rate = (passed_n / total) * 100
             scores["test_execution"] = round(pass_rate)
+            scores["test_pass_ratio"] = round(pass_rate)
             details["test_execution"] = f"{passed_n}/{total} tests passed"
         elif result.returncode == 0:
             scores["test_execution"] = 80
@@ -1074,6 +1143,286 @@ def run_dependency_check(repo_path: Path, language: str) -> dict:
     return {"scores": scores, "details": details}
 
 
+# ── Code Summary Extraction (for LLM deep review) ───────────────────────
+
+def extract_code_summary(repo_path: Path, language: str, max_chars: int = 8000) -> str:
+    """
+    Walk the cloned repo and extract key file contents for LLM review.
+    Prioritises: README, entry points, route files, model files, config.
+    Returns a structured text summary capped at max_chars.
+    """
+    summary_parts = []
+    char_count = 0
+
+    # Priority file patterns by category
+    priority_files = [
+        # READMEs and docs
+        ("README*", "Documentation"),
+        # Entry points
+        ("main.py", "Entry Point"), ("app.py", "Entry Point"), ("index.py", "Entry Point"),
+        ("index.js", "Entry Point"), ("index.ts", "Entry Point"), ("App.jsx", "Entry Point"),
+        ("App.tsx", "Entry Point"), ("main.js", "Entry Point"), ("main.ts", "Entry Point"),
+        ("server.js", "Entry Point"), ("server.ts", "Entry Point"),
+        # Config
+        ("package.json", "Config"), ("requirements.txt", "Config"),
+        ("pyproject.toml", "Config"), ("tsconfig.json", "Config"),
+        ("docker-compose*.yml", "Config"), ("Dockerfile*", "Config"),
+    ]
+
+    # Collect files by priority
+    collected_files: list[tuple[str, Path]] = []
+
+    for pattern, category in priority_files:
+        for f in repo_path.glob(pattern):
+            if f.is_file():
+                collected_files.append((category, f))
+
+    # Then grab route/model/service files
+    important_dirs = ["routes", "api", "models", "schemas", "services", "controllers",
+                      "src/routes", "src/api", "src/models", "src/components", "src/pages",
+                      "app", "lib"]
+    for dir_name in important_dirs:
+        target_dir = repo_path / dir_name
+        if target_dir.exists():
+            for f in sorted(target_dir.rglob("*"))[:10]:  # Max 10 files per dir
+                if f.is_file() and f.suffix in (".py", ".js", ".ts", ".jsx", ".tsx", ".go"):
+                    parts = f.relative_to(repo_path).parts
+                    if not any(p.startswith(".") or p in ("node_modules", "__pycache__", "dist") for p in parts):
+                        collected_files.append(("Source", f))
+
+    # De-duplicate
+    seen = set()
+    unique_files = []
+    for category, f in collected_files:
+        if f not in seen:
+            seen.add(f)
+            unique_files.append((category, f))
+
+    # Build summary
+    for category, f in unique_files:
+        if char_count >= max_chars:
+            break
+        try:
+            rel = str(f.relative_to(repo_path))
+            content = f.read_text(errors="ignore")
+
+            # Truncate individual files
+            max_file_chars = min(1500, max_chars - char_count)
+            if len(content) > max_file_chars:
+                content = content[:max_file_chars] + "\n... [truncated]"
+
+            part = f"\n=== [{category}] {rel} ===\n{content}\n"
+            summary_parts.append(part)
+            char_count += len(part)
+        except Exception:
+            continue
+
+    if not summary_parts:
+        return "[No source files could be extracted]"
+
+    return "".join(summary_parts)
+
+
+# ── Description Matching ─────────────────────────────────────────────────
+
+def run_description_matching(
+    repo_path: Path,
+    project_description: str,
+    acceptance_criteria: list,
+    language: str,
+) -> dict:
+    """
+    Compare the cloned codebase against the client's project description
+    and acceptance criteria. Returns scores for how well the code matches
+    what was requested.
+
+    Checks:
+      1. README analysis — does the README reference key terms?
+      2. File structure match — expected dirs/files based on project type
+      3. Keyword coverage — key technical terms from description found in code
+      4. Acceptance criteria cross-check — each criterion mapped to code patterns
+    """
+    scores = {}
+    details = {}
+    all_source = ""  # Shared across keyword coverage and criteria cross-check
+
+    # Common stopwords for keyword filtering
+    stopwords = {"this", "that", "with", "from", "have", "will", "been", "should", "would",
+                  "could", "their", "there", "about", "which", "when", "what", "your", "also",
+                  "more", "some", "into", "other", "than", "then", "each", "make", "like",
+                  "just", "over", "such", "take", "only", "very", "need", "must"}
+
+    # ── 1. README Analysis ──
+    readme_content = ""
+    for readme_name in ("README.md", "README.rst", "README.txt", "README"):
+        readme_path = repo_path / readme_name
+        if readme_path.exists():
+            readme_content = readme_path.read_text(errors="ignore")[:3000]
+            break
+
+    if readme_content:
+        # Check how many description keywords appear in README
+        desc_words = set(re.findall(r"\b[a-zA-Z]{4,}\b", project_description.lower()))
+        desc_words -= stopwords
+        matched = 0
+        if desc_words:
+            readme_lower = readme_content.lower()
+            matched = sum(1 for w in desc_words if w in readme_lower)
+            readme_score = min(100, round((matched / len(desc_words)) * 100))
+        else:
+            readme_score = 50
+        scores["readme_match"] = readme_score
+        details["readme_match"] = f"{matched}/{len(desc_words) if desc_words else 0} description keywords found in README"
+    else:
+        scores["readme_match"] = 20
+        details["readme_match"] = "No README file found in repository"
+
+    # ── 2. File Structure Match ──
+    desc_lower = project_description.lower()
+    expected_structures = []
+
+    # Detect what the project should have based on description
+    structure_hints = {
+        "api": ["routes", "endpoints", "controllers", "api"],
+        "react": ["components", "src", "App"],
+        "next": ["pages", "app", "next.config"],
+        "database": ["models", "schemas", "migrations", "database"],
+        "auth": ["auth", "login", "middleware"],
+        "frontend": ["components", "pages", "views", "public", "src"],
+        "backend": ["routes", "services", "models", "controllers"],
+        "testing": ["tests", "test", "__tests__", "spec"],
+        "docker": ["Dockerfile", "docker-compose"],
+    }
+
+    for category, indicators in structure_hints.items():
+        if category in desc_lower:
+            expected_structures.extend(indicators)
+
+    if expected_structures:
+        # Check which expected structures exist
+        found = 0
+        for struct in expected_structures:
+            # Check as directory or file
+            if (repo_path / struct).exists():
+                found += 1
+            else:
+                # Check recursively for subdirectory matches
+                for d in repo_path.iterdir():
+                    if d.is_dir() and struct.lower() in d.name.lower():
+                        found += 1
+                        break
+        structure_score = min(100, round((found / len(expected_structures)) * 100))
+        scores["structure_match"] = structure_score
+        details["structure_match"] = f"{found}/{len(expected_structures)} expected project structures found"
+    else:
+        scores["structure_match"] = 70  # Neutral if no specific expectations
+        details["structure_match"] = "No specific structure expectations derived from description"
+
+    # ── 3. Keyword Coverage ──
+    # Extract technical keywords from description
+    tech_keywords = set()
+    tech_patterns = [
+        r"\b(api|rest|graphql|websocket|grpc)\b",
+        r"\b(react|vue|angular|svelte|next|nuxt)\b",
+        r"\b(express|fastapi|flask|django|spring|gin)\b",
+        r"\b(postgres|mysql|mongodb|redis|sqlite|supabase)\b",
+        r"\b(jwt|oauth|auth|login|signup|session)\b",
+        r"\b(docker|kubernetes|ci|cd|deploy)\b",
+        r"\b(test|jest|pytest|mocha|cypress)\b",
+        r"\b(typescript|javascript|python|golang|rust)\b",
+    ]
+    for pattern in tech_patterns:
+        matches = re.findall(pattern, desc_lower)
+        tech_keywords.update(matches)
+
+    if tech_keywords:
+        # Search for these keywords across all source files
+        all_source = ""
+        source_extensions = {".py", ".js", ".ts", ".jsx", ".tsx", ".go", ".json", ".yaml", ".yml"}
+        for root, _dirs, files in os.walk(repo_path):
+            parts = Path(root).relative_to(repo_path).parts
+            if any(p.startswith(".") or p in ("node_modules", "vendor", "venv", ".venv", "dist") for p in parts):
+                continue
+            for f in files:
+                if Path(f).suffix.lower() in source_extensions:
+                    try:
+                        all_source += Path(root, f).read_text(errors="ignore")[:2000]
+                    except Exception:
+                        continue
+
+        all_source_lower = all_source.lower()
+        kw_found = sum(1 for kw in tech_keywords if kw in all_source_lower)
+        keyword_score = min(100, round((kw_found / len(tech_keywords)) * 100))
+        scores["keyword_coverage"] = keyword_score
+        details["keyword_coverage"] = f"{kw_found}/{len(tech_keywords)} technical keywords: {', '.join(sorted(tech_keywords)[:8])}"
+    else:
+        scores["keyword_coverage"] = 60
+        details["keyword_coverage"] = "No specific technical keywords extracted from description"
+
+    # ── 4. Acceptance Criteria Cross-check ──
+    if acceptance_criteria:
+        criteria_met = 0
+        criteria_details_list = []
+
+        # Build a searchable index of all source content if not already built
+        if not all_source:
+            all_source = ""
+            for root, _dirs, files in os.walk(repo_path):
+                parts = Path(root).relative_to(repo_path).parts
+                if any(p.startswith(".") or p in ("node_modules", "vendor", "venv", ".venv", "dist") for p in parts):
+                    continue
+                for f in files:
+                    if Path(f).suffix.lower() in {".py", ".js", ".ts", ".jsx", ".tsx", ".go"}:
+                        try:
+                            all_source += Path(root, f).read_text(errors="ignore")
+                        except Exception:
+                            continue
+
+        all_source_lower = all_source.lower() if all_source else ""
+
+        for criterion in acceptance_criteria:
+            crit_text = criterion if isinstance(criterion, str) else criterion.get("criterion", str(criterion))
+            # Extract key words from criterion
+            crit_words = set(re.findall(r"\b[a-zA-Z]{4,}\b", crit_text.lower())) - stopwords
+            if crit_words:
+                matched_words = sum(1 for w in crit_words if w in all_source_lower)
+                match_ratio = matched_words / len(crit_words)
+                if match_ratio >= 0.3:  # At least 30% of criterion words found
+                    criteria_met += 1
+                    criteria_details_list.append(f"✅ {crit_text[:60]}")
+                else:
+                    criteria_details_list.append(f"❌ {crit_text[:60]}")
+            else:
+                criteria_details_list.append(f"⚠️ {crit_text[:60]} (unparseable)")
+
+        criteria_score = min(100, round((criteria_met / len(acceptance_criteria)) * 100))
+        scores["criteria_fulfillment"] = criteria_score
+        details["criteria_fulfillment"] = f"{criteria_met}/{len(acceptance_criteria)} criteria have matching code patterns"
+    else:
+        scores["criteria_fulfillment"] = 50
+        details["criteria_fulfillment"] = "No acceptance criteria provided for cross-check"
+
+    return {"scores": scores, "details": details}
+
+
+def _extract_spec_entities(acceptance_criteria: list) -> list[str]:
+    """Extract key entity names from acceptance criteria for AST matching."""
+    entities = []
+    # Patterns that suggest specific named entities (functions, classes, modules)
+    entity_patterns = [
+        r"\b([A-Z][a-zA-Z]+(?:Controller|Service|Model|Router|Handler|Manager|Factory|Provider|Component))\b",
+        r"\b(create|get|update|delete|list|fetch|handle|process|validate|authenticate|authorize)[A-Z]\w+\b",
+        r"`(\w+)`",  # backtick-quoted identifiers
+        r"\"(\w+)\"",  # quoted identifiers
+    ]
+    for criterion in acceptance_criteria:
+        crit_text = criterion if isinstance(criterion, str) else criterion.get("criterion", str(criterion))
+        for pattern in entity_patterns:
+            matches = re.findall(pattern, crit_text)
+            entities.extend(matches)
+    return list(set(entities)) if entities else None
+
+
 # ── Full Pipeline Orchestrator ───────────────────────────────────────────
 
 async def run_full_pipeline(
@@ -1081,6 +1430,8 @@ async def run_full_pipeline(
     commit_hash: str | None = None,
     spec_entities: list[str] | None = None,
     milestone_id: str | None = None,
+    project_description: str | None = None,
+    acceptance_criteria: list | None = None,
 ) -> dict:
     """
     Run the complete code verification pipeline (Layers 1-3).
@@ -1089,13 +1440,13 @@ async def run_full_pipeline(
     Returns:
         {
             "language": str,
-            "repo_path": str,
-            "layer_results": { "static": {...}, "runtime": {...}, "sonarqube": {...}, "security": {...} },
+            "commit_hash": str,
+            "layer_results": { "static": {...}, "runtime": {...}, "sonarqube": {...}, "security": {...}, "description_match": {...} },
             "deterministic_scores": { metric: score },
             "deterministic_details": { metric: detail },
-            "aggregate_score": float,  # weighted avg of layers 1-3 (without LLM)
+            "aggregate_score": float,
             "pfi_signals": { ... },
-            "commit_hash": str,
+            "code_summary": str,
         }
     """
     repo_path = None
@@ -1110,6 +1461,12 @@ async def run_full_pipeline(
 
         # Get actual commit hash
         actual_hash = _get_current_commit(repo_path)
+
+        # Auto-extract spec entities from acceptance criteria if not provided
+        if not spec_entities and acceptance_criteria:
+            spec_entities = _extract_spec_entities(acceptance_criteria)
+            if spec_entities:
+                logger.info(f"Auto-extracted {len(spec_entities)} spec entities: {spec_entities[:5]}")
 
         # Layer 1: Static analysis
         logger.info("Running Layer 1: Static Analysis (AST)")
@@ -1131,10 +1488,23 @@ async def run_full_pipeline(
         # Dependency check
         dep_result = run_dependency_check(repo_path, language)
 
+        # Description matching (NEW — compares code vs client requirements)
+        desc_match_result = {"scores": {}, "details": {}}
+        if project_description:
+            logger.info("Running description matching against client requirements")
+            desc_match_result = run_description_matching(
+                repo_path, project_description,
+                acceptance_criteria or [], language,
+            )
+
+        # Extract code summary for LLM deep review
+        logger.info("Extracting code summary for LLM context")
+        code_summary = extract_code_summary(repo_path, language)
+
         # Merge all deterministic scores
         all_scores = {}
         all_details = {}
-        for result_group in [ast_result, test_result, sonar_result, security_result, dep_result]:
+        for result_group in [ast_result, test_result, sonar_result, security_result, dep_result, desc_match_result]:
             all_scores.update(result_group.get("scores", {}))
             all_details.update(result_group.get("details", {}))
 
@@ -1156,7 +1526,7 @@ async def run_full_pipeline(
         test_scores = test_result.get("scores", {})
         pfi_signals = {
             "auto_tests_passed_ratio": test_scores.get("test_pass_ratio", test_scores.get("test_execution", 0)) / 100,
-            "dead_code_flag": False,  # TODO: implement
+            "dead_code_flag": False,
             "security_issues": len(security_result.get("issues", [])),
             "sonarqube_available": sonar_result.get("available", False),
             "sonar_gate": sonar_result.get("scores", {}).get("sonar_gate", 50),
@@ -1171,11 +1541,13 @@ async def run_full_pipeline(
                 "sonarqube": sonar_result,
                 "security": security_result,
                 "dependency": dep_result,
+                "description_match": desc_match_result,
             },
             "deterministic_scores": all_scores,
             "deterministic_details": all_details,
             "aggregate_score": round(det_score, 1),
             "pfi_signals": pfi_signals,
+            "code_summary": code_summary,
         }
 
     finally:
