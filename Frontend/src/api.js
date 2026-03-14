@@ -114,10 +114,27 @@ export async function getEmployerProject(projectId) {
   return await apiFetch(`/employer/projects/${projectId}`);
 }
 
-export async function decomposeProject(projectId, description) {
-  return await apiFetch(`/employer/projects/${projectId}/decompose`, {
+export async function clarifyProject(projectId, description) {
+  return await apiFetch(`/employer/projects/${projectId}/clarify`, {
     method: 'POST',
     body: JSON.stringify({ description }),
+  });
+}
+
+export async function decomposeProject(projectId, description, clarificationAnswers = null) {
+  const body = { description };
+  if (clarificationAnswers && clarificationAnswers.length > 0) {
+    body.clarification_answers = clarificationAnswers;
+  }
+  return await apiFetch(`/employer/projects/${projectId}/decompose`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export async function publishProject(projectId) {
+  return await apiFetch(`/employer/projects/${projectId}/publish`, {
+    method: 'POST',
   });
 }
 
@@ -189,11 +206,12 @@ export async function activateMilestone(projectId, milestoneId) {
   });
 }
 
-export async function submitWork(projectId, milestoneId, submissionText, submissionUrl, repoUrl, commitHash) {
+export async function submitWork(projectId, milestoneId, submissionText, submissionUrl, repoUrl, commitHash, designUrls) {
   const body = { submission_text: submissionText };
   if (submissionUrl) body.submission_url = submissionUrl;
   if (repoUrl) body.repo_url = repoUrl;
   if (commitHash) body.commit_hash = commitHash;
+  if (designUrls && designUrls.length > 0) body.design_urls = designUrls;
   return await apiFetch(`/freelancer/projects/${projectId}/milestones/${milestoneId}/submit`, {
     method: 'POST',
     body: JSON.stringify(body),

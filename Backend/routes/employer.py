@@ -22,6 +22,7 @@ from models.user import User, FreelancerProfile
 from models.proposal import Proposal
 from routes.auth import get_user_api_key
 from schemas.project import (
+    ClarifyRequest,
     DecomposeRequest,
     HITLResolveRequest,
     ProjectCreate,
@@ -93,6 +94,31 @@ async def get_project(
     return ProjectResponse.model_validate(project)
 
 
+# ── Clarity Check ────────────────────────────────────────────────────────
+
+@router.post("/projects/{project_id}/clarify")
+async def clarify_project(
+    project_id: uuid.UUID,
+    body: ClarifyRequest,
+    user: Annotated[User, Depends(employer_dep)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Check if a project description needs clarification before decomposition."""
+    project = await db.get(Project, project_id)
+    if not project or project.employer_id != user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+
+    api_key = get_user_api_key(str(user.id))
+    description = body.description or project.description
+
+    try:
+        result = await ai_service.check_clarity(description, api_key)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+    return result
+
+
 # ── AI Decomposition ────────────────────────────────────────────────────
 
 @router.post("/projects/{project_id}/decompose", response_model=ProjectResponse)
@@ -108,6 +134,13 @@ async def decompose_project(
 
     api_key = get_user_api_key(str(user.id))
     description = body.description or project.description
+
+    if body.clarification_answers:
+        qa_block = "\n\nClarification Q&A:\n" + "\n".join(
+            f"Q: {a.question}\nA: {a.answer}"
+            for a in body.clarification_answers
+        )
+        description = description + qa_block
 
     try:
         result = await ai_service.decompose_project(description, api_key)
@@ -180,7 +213,31 @@ async def decompose_project(
     return ProjectResponse.model_validate(refreshed.scalar_one())
 
 
-# ── Funding ──────────────────────────────────────────────────────────────
+# ── Publish for Proposals ─────────────────────────────────────────────────
+
+@router.post("/projects/{project_id}/publish", response_model=ProjectResponse)
+async def publish_project(
+    project_id: uuid.UUID,
+    user: Annotated[User, Depends(employer_dep)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Publish a decomposed project so freelancers can browse and submit proposals.
+    Escrow is created later when a proposal is accepted (with the freelancer's bid amount)."""
+    project = await db.get(Project, project_id)
+    if not project or project.employer_id != user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    if project.status not in ("decomposed", "draft"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Project must be decomposed before publishing")
+
+    project.status = "funded"
+    await db.flush()
+    refreshed = await db.execute(
+        select(Project)
+        .options(selectinload(Project.milestones))
+        .where(Project.id == project.id)
+    )
+    return ProjectResponse.model_validate(refreshed.scalar_one())
+
 
 @router.post("/projects/{project_id}/fund", response_model=ProjectResponse)
 async def fund_project(
@@ -189,21 +246,12 @@ async def fund_project(
     user: Annotated[User, Depends(employer_dep)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
+    """Legacy funding endpoint kept for backward compatibility."""
     project = await db.get(Project, project_id)
     if not project or project.employer_id != user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
     if project.status not in ("decomposed", "draft"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Project must be decomposed before funding")
-
-    # Create or get escrow
-    escrow = await escrow_service.get_escrow_by_project(db, project_id)
-    if not escrow:
-        escrow = await escrow_service.create_escrow(db, project_id)
-
-    try:
-        await escrow_service.deposit_funds(db, escrow.id, data.amount)
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
     project.budget = data.amount
     project.status = "funded"
@@ -306,7 +354,25 @@ async def accept_proposal(
 
     # Assign freelancer to the project
     project.freelancer_id = proposal.freelancer_id
-    project.status = "active" if project.status == "funded" else project.status
+    project.status = "active"
+
+    # Create escrow with the freelancer's bid amount (or project budget as fallback)
+    escrow_amount = proposal.bid_amount or project.budget
+    if not escrow_amount or escrow_amount <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot accept: proposal has no bid amount and project has no budget set.",
+        )
+
+    project.budget = escrow_amount
+
+    escrow = await escrow_service.get_escrow_by_project(db, project_id)
+    if not escrow:
+        escrow = await escrow_service.create_escrow(db, project_id)
+    try:
+        await escrow_service.deposit_funds(db, escrow.id, escrow_amount)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
     await db.flush()
     refreshed = await db.execute(

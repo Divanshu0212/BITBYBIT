@@ -54,8 +54,19 @@ class ProjectResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ClarifyRequest(BaseModel):
+    description: str | None = None
+
+
+class ClarifyAnswer(BaseModel):
+    question_id: str
+    question: str
+    answer: str
+
+
 class DecomposeRequest(BaseModel):
-    description: str | None = None  # Override project description
+    description: str | None = None
+    clarification_answers: list[ClarifyAnswer] | None = None
 
 
 class WorkSubmission(BaseModel):
@@ -63,6 +74,7 @@ class WorkSubmission(BaseModel):
     submission_url: str | None = Field(None, max_length=1000)
     repo_url: str | None = Field(None, max_length=500, description="GitHub repo URL (mandatory for code milestones)")
     commit_hash: str | None = Field(None, max_length=64, description="Exact commit hash to verify")
+    design_urls: list[str] | None = Field(None, description="Design deliverable URLs (Figma, images, etc.) — mandatory for design milestones")
 
 
 class HITLResolveRequest(BaseModel):

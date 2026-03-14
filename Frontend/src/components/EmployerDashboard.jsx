@@ -5,7 +5,8 @@ import { motion } from 'framer-motion';
 import { 
   Building2, BrainCircuit, Wallet, ClipboardCheck, ArrowLeft, 
   CheckCircle2, DollarSign, Clock, AlertTriangle, AlertCircle,
-  Users, MailCheck, UserCheck, XCircle, Search, Package
+  MailCheck, UserCheck, XCircle, Package,
+  HelpCircle, Send, ChevronRight, Sparkles
 } from 'lucide-react';
 
 // Simple SVG-based DAG renderer
@@ -89,19 +90,43 @@ function DAGView({ milestones, dag }) {
   );
 }
 
+function StepIndicator({ label, active, done }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      {done ? (
+        <CheckCircle2 size={16} style={{ color: 'var(--green)' }} />
+      ) : active ? (
+        <span className="spinner" style={{ width: 16, height: 16 }} />
+      ) : (
+        <div style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid var(--muted)' }} />
+      )}
+      <span style={{
+        fontSize: 12, fontWeight: active ? 600 : 400,
+        color: done ? 'var(--green)' : active ? 'var(--cyan)' : 'var(--muted)',
+      }}>
+        {label}
+      </span>
+    </div>
+  );
+}
+
 export default function EmployerDashboard({ state, dispatch }) {
   const [description, setDescription] = useState('');
   const [budget, setBudget] = useState('');
   const [deadline, setDeadline] = useState('');
-  const [phase, setPhase] = useState('list'); // 'list' | 'create' | 'review' | 'fund' | 'proposals' | 'detail'
+  const [phase, setPhase] = useState('list'); // 'list' | 'create' | 'review' | 'clarify' | 'fund' | 'proposals' | 'detail'
   const [selectedProject, setSelectedProject] = useState(null);
   const [proposals, setProposals] = useState([]);
   const [decomposition, setDecomposition] = useState(null);
   const [proposalLoading, setProposalLoading] = useState({});
 
+  const [clarifyQuestions, setClarifyQuestions] = useState([]);
+  const [clarifyAnswers, setClarifyAnswers] = useState({});
+  const [clarifyAssumptions, setClarifyAssumptions] = useState([]);
+  const [progressStep, setProgressStep] = useState('');
+
   const isLoading = state.loading;
 
-  // Load projects on mount
   useEffect(() => {
     loadProjects();
   }, []);
@@ -118,23 +143,86 @@ export default function EmployerDashboard({ state, dispatch }) {
     }
   };
 
-  const handleCreate = async () => {
+  const resetClarification = () => {
+    setClarifyQuestions([]);
+    setClarifyAnswers({});
+    setClarifyAssumptions([]);
+    setProgressStep('');
+  };
+
+  const handleCreateAndAnalyze = async () => {
     if (!description.trim()) return;
     dispatch({ type: ACTIONS.SET_LOADING, payload: { create: true } });
-    dispatch({ type: ACTIONS.SET_ERROR, payload: { create: null } });
+    dispatch({ type: ACTIONS.SET_ERROR, payload: { create: null, decompose: null } });
+    resetClarification();
+
     try {
+      setProgressStep('creating');
       const project = await api.createProject({
         description,
         budget: budget ? parseFloat(budget) : undefined,
         deadline: deadline || undefined,
       });
       setSelectedProject(project);
+
+      setProgressStep('analyzing');
+      const clarity = await api.clarifyProject(project.id, description);
+
+      if (clarity.needs_clarification && clarity.questions?.length > 0) {
+        setClarifyQuestions(clarity.questions);
+        setClarifyAssumptions(clarity.assumptions_if_unanswered || []);
+        setPhase('clarify');
+        dispatch({ type: ACTIONS.SET_LOADING, payload: { create: false } });
+        setProgressStep('');
+        await loadProjects();
+        return;
+      }
+
+      setProgressStep('decomposing');
+      dispatch({ type: ACTIONS.SET_LOADING, payload: { decompose: true } });
+      const decomposed = await api.decomposeProject(project.id, description);
+      setSelectedProject(decomposed);
+      setDecomposition(decomposed.decomposition);
       setPhase('review');
       await loadProjects();
     } catch (err) {
       dispatch({ type: ACTIONS.SET_ERROR, payload: { create: err.message } });
     } finally {
-      dispatch({ type: ACTIONS.SET_LOADING, payload: { create: false } });
+      dispatch({ type: ACTIONS.SET_LOADING, payload: { create: false, decompose: false } });
+      setProgressStep('');
+    }
+  };
+
+  const handleSubmitClarificationAndDecompose = async () => {
+    if (!selectedProject) return;
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { decompose: true } });
+    dispatch({ type: ACTIONS.SET_ERROR, payload: { decompose: null } });
+    setProgressStep('decomposing');
+
+    const answers = clarifyQuestions
+      .filter(q => clarifyAnswers[q.id]?.trim())
+      .map(q => ({
+        question_id: q.id,
+        question: q.question,
+        answer: clarifyAnswers[q.id].trim(),
+      }));
+
+    try {
+      const project = await api.decomposeProject(
+        selectedProject.id,
+        description || selectedProject.description,
+        answers.length > 0 ? answers : null,
+      );
+      setSelectedProject(project);
+      setDecomposition(project.decomposition);
+      setPhase('review');
+      resetClarification();
+      await loadProjects();
+    } catch (err) {
+      dispatch({ type: ACTIONS.SET_ERROR, payload: { decompose: err.message } });
+    } finally {
+      dispatch({ type: ACTIONS.SET_LOADING, payload: { decompose: false } });
+      setProgressStep('');
     }
   };
 
@@ -154,12 +242,12 @@ export default function EmployerDashboard({ state, dispatch }) {
     }
   };
 
-  const handleFund = async () => {
-    if (!selectedProject || !budget) return;
+  const handlePublish = async () => {
+    if (!selectedProject) return;
     dispatch({ type: ACTIONS.SET_LOADING, payload: { fund: true } });
     dispatch({ type: ACTIONS.SET_ERROR, payload: { fund: null } });
     try {
-      const project = await api.fundProject(selectedProject.id, parseFloat(budget));
+      const project = await api.publishProject(selectedProject.id);
       setSelectedProject(project);
       setPhase('proposals');
       await loadProjects();
@@ -210,10 +298,12 @@ export default function EmployerDashboard({ state, dispatch }) {
   const openProject = async (project) => {
     setSelectedProject(project);
     setDecomposition(project.decomposition);
+    resetClarification();
     if (project.status === 'draft') {
       setDescription(project.description);
       setPhase('review');
     } else if (project.status === 'decomposed') {
+      setDescription(project.description);
       setBudget(project.budget ? String(project.budget) : '');
       setPhase('review');
     } else if (project.status === 'funded' && !project.freelancer_id) {
@@ -260,6 +350,7 @@ export default function EmployerDashboard({ state, dispatch }) {
             setDeadline('');
             setSelectedProject(null);
             setDecomposition(null);
+            resetClarification();
           }}>
             + Post a Project
           </button>
@@ -322,17 +413,193 @@ export default function EmployerDashboard({ state, dispatch }) {
           <Building2 size={24} color="var(--cyan)" />
           {
           phase === 'create' ? 'Post a New Project' :
+          phase === 'clarify' ? 'Clarify Your Project' :
           phase === 'proposals' ? 'Review Proposals' :
           phase === 'detail' ? 'Project Details' :
           'Project Setup'
         }</h2>
-        <button className="btn btn-ghost flex items-center gap-1" onClick={() => { setPhase('list'); setSelectedProject(null); }}>
+        <button className="btn btn-ghost flex items-center gap-1" onClick={() => { setPhase('list'); setSelectedProject(null); resetClarification(); }}>
           <ArrowLeft size={16} /> Back to Projects
         </button>
       </div>
 
-      {/* Create / Decompose Phase */}
-      {(phase === 'create' || phase === 'review') && (
+      {/* Create Phase — One-click create + analyze */}
+      {phase === 'create' && (
+        <div className="form-section">
+          <div className="form-group">
+            <label className="input-label">Project Description</label>
+            <textarea
+              className="input-textarea"
+              rows={5}
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              placeholder="Describe your project requirements in 2-4 sentences. Be specific about deliverables, technologies, and standards..."
+              disabled={isLoading.create}
+            />
+          </div>
+
+          {state.errors.create && <div className="error-msg flex items-center gap-1"><XCircle size={16} /> {state.errors.create}</div>}
+          {state.errors.decompose && <div className="error-msg flex items-center gap-1"><XCircle size={16} /> {state.errors.decompose}</div>}
+
+          {/* Progress indicator during one-click flow */}
+          {(isLoading.create || isLoading.decompose) && progressStep && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="progress-steps"
+              style={{
+                display: 'flex', gap: 16, alignItems: 'center', padding: '14px 18px',
+                background: 'var(--surface)', borderRadius: 10, marginBottom: 16, border: '1px solid var(--border)',
+              }}
+            >
+              <StepIndicator label="Creating project" active={progressStep === 'creating'} done={progressStep !== 'creating'} />
+              <ChevronRight size={14} style={{ color: 'var(--muted)' }} />
+              <StepIndicator label="Analyzing clarity" active={progressStep === 'analyzing'} done={progressStep === 'decomposing'} />
+              <ChevronRight size={14} style={{ color: 'var(--muted)' }} />
+              <StepIndicator label="AI decomposition" active={progressStep === 'decomposing'} done={false} />
+            </motion.div>
+          )}
+
+          <button
+            className="btn btn-primary btn-lg flex items-center gap-2"
+            onClick={handleCreateAndAnalyze}
+            disabled={isLoading.create || isLoading.decompose || !description.trim()}
+          >
+            {(isLoading.create || isLoading.decompose)
+              ? <><span className="spinner" /> {progressStep === 'creating' ? 'Creating...' : progressStep === 'analyzing' ? 'Analyzing clarity...' : 'Decomposing with AI...'}</>
+              : <><Sparkles size={18} /> Create & Decompose</>
+            }
+          </button>
+        </div>
+      )}
+
+      {/* Clarification Phase — Questions for vague descriptions */}
+      {phase === 'clarify' && (
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="form-section">
+          <div className="clarify-banner" style={{
+            background: 'linear-gradient(135deg, rgba(var(--cyan-rgb, 0,188,212), 0.08), rgba(var(--yellow-rgb, 255,193,7), 0.06))',
+            border: '1px solid rgba(var(--cyan-rgb, 0,188,212), 0.25)',
+            borderRadius: 12, padding: '20px 24px', marginBottom: 20,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 8 }}>
+              <HelpCircle size={22} style={{ color: 'var(--cyan)', flexShrink: 0, marginTop: 2 }} />
+              <div>
+                <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text)' }}>A few questions to improve your decomposition</h3>
+                <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--muted)' }}>
+                  Your description could use some more detail. Answer these questions so the AI can create better, more accurate milestones.
+                  You can skip any questions — the AI will make reasonable assumptions.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="project-desc-preview" style={{
+            background: 'var(--surface)', borderRadius: 8, padding: '12px 16px',
+            marginBottom: 20, border: '1px solid var(--border)', fontSize: 13, color: 'var(--muted)',
+          }}>
+            <strong style={{ color: 'var(--text)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Your description:
+            </strong>
+            <p style={{ margin: '6px 0 0' }}>{selectedProject?.description}</p>
+          </div>
+
+          <div className="clarify-questions" style={{ display: 'flex', flexDirection: 'column', gap: 16, marginBottom: 24 }}>
+            {clarifyQuestions.map((q, i) => (
+              <motion.div
+                key={q.id}
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: i * 0.08 }}
+                style={{
+                  background: 'var(--surface)', borderRadius: 10, padding: '16px 18px',
+                  border: '1px solid var(--border)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 8 }}>
+                  <span style={{
+                    background: 'var(--cyan)', color: '#000', borderRadius: 6, padding: '2px 8px',
+                    fontSize: 11, fontWeight: 700, flexShrink: 0,
+                  }}>Q{i + 1}</span>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ margin: 0, fontWeight: 500, color: 'var(--text)', fontSize: 14 }}>{q.question}</p>
+                    {q.reason && (
+                      <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted)', fontStyle: 'italic' }}>{q.reason}</p>
+                    )}
+                  </div>
+                </div>
+                <textarea
+                  className="input-textarea"
+                  rows={2}
+                  placeholder="Type your answer... (leave empty to skip)"
+                  value={clarifyAnswers[q.id] || ''}
+                  onChange={e => setClarifyAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
+                  style={{ marginTop: 4, fontSize: 13 }}
+                />
+              </motion.div>
+            ))}
+          </div>
+
+          {clarifyAssumptions.length > 0 && (
+            <div style={{
+              background: 'var(--surface)', borderRadius: 8, padding: '12px 16px',
+              marginBottom: 20, border: '1px solid var(--border)',
+            }}>
+              <strong style={{ fontSize: 12, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Assumptions if unanswered:
+              </strong>
+              <ul style={{ margin: '8px 0 0', paddingLeft: 20, fontSize: 13, color: 'var(--muted)' }}>
+                {clarifyAssumptions.map((a, i) => <li key={i} style={{ marginBottom: 4 }}>{a}</li>)}
+              </ul>
+            </div>
+          )}
+
+          {state.errors.decompose && <div className="error-msg flex items-center gap-1"><XCircle size={16} /> {state.errors.decompose}</div>}
+
+          {isLoading.decompose && progressStep === 'decomposing' && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="progress-steps"
+              style={{
+                display: 'flex', gap: 16, alignItems: 'center', padding: '14px 18px',
+                background: 'var(--surface)', borderRadius: 10, marginBottom: 16, border: '1px solid var(--border)',
+              }}
+            >
+              <StepIndicator label="Answers submitted" active={false} done={true} />
+              <ChevronRight size={14} style={{ color: 'var(--muted)' }} />
+              <StepIndicator label="AI decomposition" active={true} done={false} />
+            </motion.div>
+          )}
+
+          <div style={{ display: 'flex', gap: 12 }}>
+            <button
+              className="btn btn-primary btn-lg flex items-center gap-2"
+              onClick={handleSubmitClarificationAndDecompose}
+              disabled={isLoading.decompose}
+            >
+              {isLoading.decompose
+                ? <><span className="spinner" /> Decomposing with your answers...</>
+                : <><Send size={16} /> Submit & Decompose</>
+              }
+            </button>
+            <button
+              className="btn btn-ghost flex items-center gap-2"
+              onClick={() => {
+                resetClarification();
+                handleDecompose().then(() => {
+                  setPhase('review');
+                });
+              }}
+              disabled={isLoading.decompose}
+            >
+              Skip — Decompose Anyway
+            </button>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Review Phase — Milestones display */}
+      {phase === 'review' && (
         <>
           <div className="form-section">
             <div className="form-group">
@@ -347,20 +614,9 @@ export default function EmployerDashboard({ state, dispatch }) {
               />
             </div>
 
-            {state.errors.create && <div className="error-msg flex items-center gap-1"><XCircle size={16} /> {state.errors.create}</div>}
             {state.errors.decompose && <div className="error-msg flex items-center gap-1"><XCircle size={16} /> {state.errors.decompose}</div>}
 
-            {!selectedProject && (
-              <button
-                className="btn btn-primary btn-lg flex items-center gap-2"
-                onClick={handleCreate}
-                disabled={isLoading.create || !description.trim()}
-              >
-                {isLoading.create ? <><span className="spinner" /> Creating...</> : <><ClipboardCheck size={18} /> Create Project</>}
-              </button>
-            )}
-
-            {selectedProject && selectedProject.milestones?.length === 0 && (
+            {selectedProject && (!selectedProject.milestones || selectedProject.milestones.length === 0) && (
               <button
                 className="btn btn-primary btn-lg flex items-center gap-2"
                 onClick={handleDecompose}
@@ -371,7 +627,6 @@ export default function EmployerDashboard({ state, dispatch }) {
             )}
           </div>
 
-          {/* Milestones Review */}
           {selectedProject && selectedProject.milestones?.length > 0 && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="animate-fade-in">
               <div className="decomp-meta flex items-center gap-3">
@@ -414,33 +669,25 @@ export default function EmployerDashboard({ state, dispatch }) {
                 ))}
               </div>
 
-              {/* Fund Section */}
+              {/* Publish Section */}
               {selectedProject.status === 'decomposed' && (
                 <div className="confirm-section">
-                  <h3>💰 Fund Project & Open for Proposals</h3>
+                  <h3>📢 Publish for Proposals</h3>
                   <p className="text-muted" style={{ marginBottom: 16 }}>
-                    Once funded, your project will be visible to freelancers who can submit proposals.
+                    Once published, freelancers can browse your project and submit proposals with their bid amounts.
+                    Funds are locked in escrow only when you accept a proposal — the amount blocked will be the freelancer's bid.
                   </p>
-                  <div className="form-grid">
-                    <div className="form-group">
-                      <label className="input-label">Total Budget (USD) *</label>
-                      <input
-                        type="number" className="input-field mono" value={budget}
-                        onChange={e => setBudget(e.target.value)} placeholder="5000" min="1"
-                      />
-                    </div>
-                  </div>
-                  {state.errors.fund && <div className="error-msg">❌ {state.errors.fund}</div>}
+                  {state.errors.fund && <div className="error-msg flex items-center gap-1"><XCircle size={16} /> {state.errors.fund}</div>}
                   <div className="btn-row">
                     <button className="btn btn-ghost" onClick={() => { handleDecompose(); }}>
                       ← Re-decompose
                     </button>
                     <button
                       className="btn btn-primary btn-lg"
-                      onClick={handleFund}
-                      disabled={!budget || isLoading.fund}
+                      onClick={handlePublish}
+                      disabled={isLoading.fund}
                     >
-                      {isLoading.fund ? <><span className="spinner" /> Funding...</> : '🔒 Fund & Publish for Proposals'}
+                      {isLoading.fund ? <><span className="spinner" /> Publishing...</> : '📢 Publish for Proposals'}
                     </button>
                   </div>
                 </div>
@@ -454,9 +701,9 @@ export default function EmployerDashboard({ state, dispatch }) {
       {phase === 'proposals' && selectedProject && (
         <div className="animate-fade-in">
           <div className="success-banner" style={{ marginBottom: 24 }}>
-            <div className="success-icon">💰</div>
-            <h3>Project Funded — ${selectedProject.budget?.toLocaleString()}</h3>
-            <p>Your project is live! Freelancers can now browse and submit proposals. Review them below.</p>
+            <div className="success-icon">📢</div>
+            <h3>Project Published — Accepting Proposals</h3>
+            <p>Your project is live! Freelancers can now browse and submit proposals. When you accept a proposal, the freelancer's bid amount will be locked in escrow.</p>
           </div>
 
           {/* Project summary mini */}

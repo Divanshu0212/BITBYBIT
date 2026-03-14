@@ -271,6 +271,66 @@ def _normalise_keys(d: dict):
         ms["acceptance_criteria"] = normalised
 
 
+# ── Clarity Check ────────────────────────────────────────────────────────
+
+CLARITY_CHECK_PROMPT = """You are a project description analyst. Your job is to evaluate whether a project description is clear enough for automated decomposition into milestones.
+
+Analyze the description for:
+1. Specificity of deliverables
+2. Technology/tool mentions
+3. Scope clarity (what's included vs excluded)
+4. Measurable outcomes
+5. Target audience or platform
+
+Rate the ambiguity from 0.0 (crystal clear, highly specific) to 1.0 (extremely vague, no actionable detail).
+If ambiguity_score > 0.4, set needs_clarification to true and generate 2-5 targeted questions.
+
+Return ONLY valid JSON:
+{
+  "needs_clarification": true/false,
+  "ambiguity_score": 0.0-1.0,
+  "questions": [
+    {"id": "Q1", "question": "specific question text", "reason": "why this matters for decomposition"}
+  ],
+  "assumptions_if_unanswered": ["assumption 1 the AI would make if question is not answered"]
+}"""
+
+
+async def check_clarity(description: str, api_key: str | None = None) -> dict:
+    """Quick LLM call to assess whether a project description needs clarification."""
+    try:
+        raw = await call_groq(CLARITY_CHECK_PROMPT, description, api_key)
+    except Exception as exc:
+        logger.warning(f"Clarity check failed, defaulting to no clarification needed: {exc}")
+        return {
+            "needs_clarification": False,
+            "ambiguity_score": 0.0,
+            "questions": [],
+            "assumptions_if_unanswered": [],
+        }
+
+    needs = raw.get("needs_clarification", False)
+    score = raw.get("ambiguity_score", 0.0)
+
+    questions = []
+    for i, q in enumerate(raw.get("questions", [])):
+        if isinstance(q, str):
+            questions.append({"id": f"Q{i+1}", "question": q, "reason": ""})
+        elif isinstance(q, dict):
+            questions.append({
+                "id": q.get("id", f"Q{i+1}"),
+                "question": q.get("question", str(q)),
+                "reason": q.get("reason", ""),
+            })
+
+    return {
+        "needs_clarification": bool(needs) and score > 0.4,
+        "ambiguity_score": float(score),
+        "questions": questions,
+        "assumptions_if_unanswered": raw.get("assumptions_if_unanswered", []),
+    }
+
+
 # ── Modality-Aware Evaluation ────────────────────────────────────────────
 
 def _build_evaluation_prompt(

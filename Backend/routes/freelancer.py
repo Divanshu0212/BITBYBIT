@@ -31,6 +31,24 @@ router = APIRouter(prefix="/api/freelancer", tags=["Freelancer"])
 
 freelancer_dep = require_role("freelancer")
 
+CODE_WEIGHT_KEYS = {"correctness", "security", "test_coverage", "maintainability"}
+DESIGN_WEIGHT_KEYS = {"visual_consistency", "accessibility", "responsive_completeness", "export_readiness", "requirements_coverage"}
+CONTENT_WEIGHT_KEYS = {"factuality", "originality", "readability", "seo_structure", "style_alignment"}
+
+
+def _detect_modalities(task_type: str, scoring_weights: dict | None) -> tuple[bool, bool, bool]:
+    """Return (has_code, has_design, has_content) for a milestone."""
+    if task_type == "code":
+        return True, False, False
+    if task_type == "design":
+        return False, True, False
+    if task_type == "content":
+        return False, False, True
+    if task_type == "mixed" and scoring_weights:
+        keys = set(scoring_weights.keys())
+        return bool(keys & CODE_WEIGHT_KEYS), bool(keys & DESIGN_WEIGHT_KEYS), bool(keys & CONTENT_WEIGHT_KEYS)
+    return True, True, False
+
 
 # ── Browse Open Projects ─────────────────────────────────────────────────
 
@@ -274,11 +292,18 @@ async def submit_work(
     if not milestone or milestone.project_id != project_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Milestone not found")
 
-    # Enforce: code milestones MUST have a GitHub repo URL
-    if (milestone.task_type or "").lower() == "code" and not data.repo_url:
+    task_type = (milestone.task_type or "mixed").lower()
+    has_code, has_design, has_content = _detect_modalities(task_type, milestone.scoring_weights)
+
+    if has_code and not data.repo_url:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="GitHub repository URL is mandatory for code milestones. Please provide a repo_url.",
+            detail="GitHub repository URL is mandatory for milestones that include code work. Please provide a repo_url.",
+        )
+    if has_design and not data.design_urls:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Design deliverable URLs (Figma, screenshots, etc.) are mandatory for milestones that include design work.",
         )
 
     # 1. Submit work
@@ -295,6 +320,8 @@ async def submit_work(
     full_submission = data.submission_text
     if data.submission_url:
         full_submission += f"\n\nURL: {data.submission_url}"
+    if data.design_urls:
+        full_submission += "\n\nDesign Deliverables:\n" + "\n".join(f"- {u}" for u in data.design_urls)
 
     try:
         # Build structured acceptance criteria from milestone verification profile

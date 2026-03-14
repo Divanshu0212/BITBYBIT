@@ -6,9 +6,30 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Building2, Wallet, ClipboardList, PenTool, CheckCircle2,
   DollarSign, Clock, AlertTriangle, AlertCircle, XCircle,
-  Search, Package, Mail, Briefcase, RefreshCw, Send, SendHorizontal, Undo2, Play, SearchCode,
-  Github, GitCommitHorizontal
+  Search, Package, Mail, Briefcase, RefreshCw, Send, Undo2, Play, SearchCode,
+  Github, GitCommitHorizontal, Image, FileText, Plus, Trash2
 } from 'lucide-react';
+
+const CODE_KEYS = new Set(['correctness', 'security', 'test_coverage', 'maintainability']);
+const DESIGN_KEYS = new Set(['visual_consistency', 'accessibility', 'responsive_completeness', 'export_readiness', 'requirements_coverage']);
+const CONTENT_KEYS = new Set(['factuality', 'originality', 'readability', 'seo_structure', 'style_alignment']);
+
+function detectModalities(milestone) {
+  const tt = (milestone.task_type || 'mixed').toLowerCase();
+  if (tt === 'code') return { code: true, design: false, content: false };
+  if (tt === 'design') return { code: false, design: true, content: false };
+  if (tt === 'content') return { code: false, design: false, content: true };
+
+  const weights = milestone.scoring_weights;
+  if (weights && typeof weights === 'object') {
+    const keys = new Set(Object.keys(weights));
+    const hasCode = [...keys].some(k => CODE_KEYS.has(k));
+    const hasDesign = [...keys].some(k => DESIGN_KEYS.has(k));
+    const hasContent = [...keys].some(k => CONTENT_KEYS.has(k));
+    if (hasCode || hasDesign || hasContent) return { code: hasCode, design: hasDesign, content: hasContent };
+  }
+  return { code: true, design: true, content: false };
+}
 
 export default function FreelancerDashboard({ state, dispatch, mode = 'browse' }) {
   const [selectedMs, setSelectedMs] = useState(null);
@@ -16,6 +37,7 @@ export default function FreelancerDashboard({ state, dispatch, mode = 'browse' }
   const [submissionUrl, setSubmissionUrl] = useState('');
   const [repoUrl, setRepoUrl] = useState('');
   const [commitHash, setCommitHash] = useState('');
+  const [designUrls, setDesignUrls] = useState(['']);
   const [selectedProject, setSelectedProject] = useState(null);
   const [submissionLoading, setSubmissionLoading] = useState(false);
   const [submissionResult, setSubmissionResult] = useState(null);
@@ -127,11 +149,14 @@ export default function FreelancerDashboard({ state, dispatch, mode = 'browse' }
     setSubmissionResult(null);
     dispatch({ type: ACTIONS.SET_ERROR, payload: { aqa: null } });
 
+    const filteredDesignUrls = designUrls.filter(u => u.trim());
+
     try {
       const result = await api.submitWork(
         project.id, milestone.id,
         submissionText, submissionUrl || null,
-        repoUrl || null, commitHash || null
+        repoUrl || null, commitHash || null,
+        filteredDesignUrls.length > 0 ? filteredDesignUrls : null
       );
 
       setSubmissionResult(result);
@@ -148,6 +173,7 @@ export default function FreelancerDashboard({ state, dispatch, mode = 'browse' }
       setSubmissionUrl('');
       setRepoUrl('');
       setCommitHash('');
+      setDesignUrls(['']);
       setSelectedMs(null);
     } catch (err) {
       dispatch({ type: ACTIONS.SET_ERROR, payload: { aqa: err.message } });
@@ -550,96 +576,186 @@ export default function FreelancerDashboard({ state, dispatch, mode = 'browse' }
               )}
             </div>
 
-            {/* Submission Form */}
-            {selectedMs === ms.id && ['IN_PROGRESS', 'PAID_PARTIAL', 'REFUND_INITIATED'].includes(ms.status) && (
-              <div className="submission-form animate-fade-in">
-                <h5>{ms.status === 'IN_PROGRESS' ? 'Submit Work for Review' : 'Resubmit Work for Review'}</h5>
-                <textarea
-                  className="input-textarea"
-                  rows={4}
-                  value={submissionText}
-                  onChange={e => setSubmissionText(e.target.value)}
-                  placeholder="Describe the work you've completed in detail..."
-                />
-                <input
-                  type="url"
-                  className="input-field"
-                  value={submissionUrl}
-                  onChange={e => setSubmissionUrl(e.target.value)}
-                  placeholder="Optional: Link to deliverable (URL)"
-                />
+            {/* Submission Form — modality-aware */}
+            {selectedMs === ms.id && ['IN_PROGRESS', 'PAID_PARTIAL', 'REFUND_INITIATED'].includes(ms.status) && (() => {
+              const mods = detectModalities(ms);
+              const modLabels = [mods.code && 'Code', mods.design && 'Design', mods.content && 'Content'].filter(Boolean);
+              const canSubmit = submissionText.trim()
+                && (!mods.code || repoUrl.trim())
+                && (!mods.design || designUrls.some(u => u.trim()));
 
-                {/* GitHub Repo Fields — mandatory for code milestones */}
-                {(ms.task_type || '').toLowerCase() === 'code' ? (
-                  <div className="code-repo-fields">
-                    <div className="repo-field-group">
-                      <label className="input-label flex items-center gap-1">
-                        <Github size={16} /> GitHub Repository URL <span className="required-star">*</span>
-                      </label>
-                      <input
-                        type="url"
-                        className="input-field repo-url-field"
-                        value={repoUrl}
-                        onChange={e => setRepoUrl(e.target.value)}
-                        placeholder="https://github.com/username/repo"
-                        required
-                      />
-                      {!repoUrl.trim() && (
-                        <span className="field-hint field-hint-warning">Required for code milestones</span>
+              return (
+                <div className="submission-form animate-fade-in">
+                  <h5>{ms.status === 'IN_PROGRESS' ? 'Submit Work for Review' : 'Resubmit Work for Review'}</h5>
+
+                  {modLabels.length > 1 && (
+                    <div style={{
+                      display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap',
+                    }}>
+                      {modLabels.map(label => (
+                        <span key={label} className={`task-type-badge ${label.toLowerCase()}`} style={{ fontSize: 11 }}>
+                          {label}
+                        </span>
+                      ))}
+                      <span style={{ fontSize: 12, color: 'var(--muted)', alignSelf: 'center' }}>
+                        — provide deliverables for each modality
+                      </span>
+                    </div>
+                  )}
+
+                  <textarea
+                    className="input-textarea"
+                    rows={4}
+                    value={submissionText}
+                    onChange={e => setSubmissionText(e.target.value)}
+                    placeholder="Describe the work you've completed in detail..."
+                  />
+                  <input
+                    type="url"
+                    className="input-field"
+                    value={submissionUrl}
+                    onChange={e => setSubmissionUrl(e.target.value)}
+                    placeholder="Optional: Link to deliverable (URL)"
+                  />
+
+                  {/* Code fields */}
+                  {mods.code && (
+                    <div className="code-repo-fields" style={{ background: 'rgba(var(--cyan-rgb, 0,188,212), 0.04)', borderRadius: 8, padding: 14, marginTop: 8, border: '1px solid var(--border)' }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--cyan)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <Github size={14} /> Code Deliverables
+                      </div>
+                      <div className="repo-field-group">
+                        <label className="input-label flex items-center gap-1">
+                          GitHub Repository URL <span className="required-star">*</span>
+                        </label>
+                        <input
+                          type="url"
+                          className="input-field repo-url-field"
+                          value={repoUrl}
+                          onChange={e => setRepoUrl(e.target.value)}
+                          placeholder="https://github.com/username/repo"
+                          required
+                        />
+                        {!repoUrl.trim() && (
+                          <span className="field-hint field-hint-warning">Required for code work</span>
+                        )}
+                      </div>
+                      <div className="repo-field-group" style={{ marginTop: 8 }}>
+                        <label className="input-label flex items-center gap-1">
+                          <GitCommitHorizontal size={16} /> Commit Hash
+                          <span className="optional-tag">optional</span>
+                        </label>
+                        <input
+                          type="text"
+                          className="input-field commit-hash-field mono"
+                          value={commitHash}
+                          onChange={e => setCommitHash(e.target.value)}
+                          placeholder="e.g. a1b2c3d (pins verification to exact commit)"
+                          maxLength={64}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Design fields */}
+                  {mods.design && (
+                    <div style={{ background: 'rgba(168,85,247,0.04)', borderRadius: 8, padding: 14, marginTop: 8, border: '1px solid var(--border)' }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: '#a855f7', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <Image size={14} /> Design Deliverables <span className="required-star">*</span>
+                      </div>
+                      {designUrls.map((url, idx) => (
+                        <div key={idx} style={{ display: 'flex', gap: 8, marginBottom: 6, alignItems: 'center' }}>
+                          <input
+                            type="url"
+                            className="input-field"
+                            style={{ flex: 1 }}
+                            value={url}
+                            onChange={e => {
+                              const next = [...designUrls];
+                              next[idx] = e.target.value;
+                              setDesignUrls(next);
+                            }}
+                            placeholder={idx === 0 ? 'Figma link, screenshot URL, or design file link' : 'Another design URL...'}
+                          />
+                          {designUrls.length > 1 && (
+                            <button
+                              className="btn btn-ghost"
+                              style={{ padding: '4px 6px', minWidth: 0 }}
+                              onClick={() => setDesignUrls(prev => prev.filter((_, i) => i !== idx))}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      <button
+                        className="btn btn-ghost flex items-center gap-1"
+                        style={{ fontSize: 12, padding: '4px 10px' }}
+                        onClick={() => setDesignUrls(prev => [...prev, ''])}
+                      >
+                        <Plus size={14} /> Add another URL
+                      </button>
+                      {!designUrls.some(u => u.trim()) && (
+                        <span className="field-hint field-hint-warning" style={{ display: 'block', marginTop: 6 }}>
+                          At least one design URL is required
+                        </span>
                       )}
                     </div>
+                  )}
+
+                  {/* Content fields */}
+                  {mods.content && (
+                    <div style={{ background: 'rgba(34,197,94,0.04)', borderRadius: 8, padding: 14, marginTop: 8, border: '1px solid var(--border)' }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--green)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <FileText size={14} /> Content Deliverables
+                      </div>
+                      <input
+                        type="url"
+                        className="input-field"
+                        value={submissionUrl}
+                        onChange={e => setSubmissionUrl(e.target.value)}
+                        placeholder="Google Doc, Notion page, or content URL"
+                      />
+                    </div>
+                  )}
+
+                  {/* Non-code, non-design, non-content — fallback repo field */}
+                  {!mods.code && !mods.design && !mods.content && (
                     <div className="repo-field-group">
                       <label className="input-label flex items-center gap-1">
-                        <GitCommitHorizontal size={16} /> Commit Hash
+                        <Github size={16} /> GitHub Repository URL
                         <span className="optional-tag">optional</span>
                       </label>
                       <input
-                        type="text"
-                        className="input-field commit-hash-field mono"
-                        value={commitHash}
-                        onChange={e => setCommitHash(e.target.value)}
-                        placeholder="e.g. a1b2c3d (pins verification to exact commit)"
-                        maxLength={64}
+                        type="url"
+                        className="input-field"
+                        value={repoUrl}
+                        onChange={e => setRepoUrl(e.target.value)}
+                        placeholder="https://github.com/username/repo (optional)"
                       />
                     </div>
-                  </div>
-                ) : (
-                  <div className="repo-field-group">
-                    <label className="input-label flex items-center gap-1">
-                      <Github size={16} /> GitHub Repository URL
-                      <span className="optional-tag">optional</span>
-                    </label>
-                    <input
-                      type="url"
-                      className="input-field"
-                      value={repoUrl}
-                      onChange={e => setRepoUrl(e.target.value)}
-                      placeholder="https://github.com/username/repo (optional)"
-                    />
-                  </div>
-                )}
+                  )}
 
-                <div className="btn-row">
-                  <button className="btn btn-ghost" onClick={() => setSelectedMs(null)}>Cancel</button>
-                  <button
-                    className="btn btn-primary"
-                    onClick={() => handleSubmitWork(selectedProject, ms)}
-                    disabled={
-                      !submissionText.trim() ||
-                      submissionLoading ||
-                      ((ms.task_type || '').toLowerCase() === 'code' && !repoUrl.trim())
-                    }
-                  >
-                    {submissionLoading
-                      ? <><span className="spinner" /> Running AQA Analysis...</>
-                      : (ms.task_type || '').toLowerCase() === 'code'
-                        ? '🔬 Submit for Code Verification'
-                        : '🚀 Submit for AQA Review'
-                    }
-                  </button>
+                  <div className="btn-row">
+                    <button className="btn btn-ghost" onClick={() => { setSelectedMs(null); setDesignUrls(['']); }}>Cancel</button>
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => handleSubmitWork(selectedProject, ms)}
+                      disabled={!canSubmit || submissionLoading}
+                    >
+                      {submissionLoading
+                        ? <><span className="spinner" /> Running AQA Analysis...</>
+                        : modLabels.length > 1
+                          ? `🔬 Submit ${modLabels.join(' + ')} Work`
+                          : mods.code ? '🔬 Submit for Code Verification'
+                          : mods.design ? '🎨 Submit for Design Review'
+                          : '🚀 Submit for AQA Review'
+                      }
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* AQA Results */}
             {ms.aqa_result && (
