@@ -1,7 +1,13 @@
 // api.js — Centralized API client for BITBYBIT backend
 // All backend calls go through this module. JWT token is auto-attached.
 
-const API_BASE = 'http://localhost:8000/api';
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
+
+if (!BACKEND_URL) {
+  throw new Error('Missing VITE_BACKEND_URL. Please set it in your frontend .env file.');
+}
+
+const API_BASE = `${BACKEND_URL.replace(/\/$/, '')}/api`;
 
 // ── Token Management ────────────────────────────────────────────────────
 
