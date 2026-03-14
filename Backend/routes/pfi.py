@@ -28,8 +28,8 @@ async def get_pfi_score(
     if not pfi:
         return {
             "user_id": str(user_id),
-            "score": 300,
-            "risk": "Unproven",
+            "score": 500,
+            "risk": "Developing",
         }
 
     return {

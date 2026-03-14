@@ -394,7 +394,7 @@ async def get_own_pfi(
 ):
     pfi = await pfi_service.get_pfi_score(db, user.id)
     if not pfi:
-        return {"score": 300, "risk": "Unproven"}
+        return {"score": 500, "risk": "Developing"}
 
     return {
         "score": pfi.score,
