@@ -2,6 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { ACTIONS } from '../store/actions';
 import * as api from '../api';
 import AQAReport from './AQAReport';
+import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  Building2, Wallet, ClipboardList, PenTool, CheckCircle2,
+  DollarSign, Clock, AlertTriangle, AlertCircle, XCircle,
+  Search, Package, Mail, Briefcase, RefreshCw, Send, SendHorizontal, Undo2, Play, SearchCode
+} from 'lucide-react';
 
 export default function FreelancerDashboard({ state, dispatch, mode = 'browse' }) {
   const [selectedMs, setSelectedMs] = useState(null);
@@ -145,9 +151,14 @@ export default function FreelancerDashboard({ state, dispatch, mode = 'browse' }
   };
 
   const statusIcon = (status) => ({
-    PENDING: '⏳', IN_PROGRESS: '🔨', WORK_SUBMITTED: '📤',
-    AQA_REVIEW: '🔍', PAID_FULL: '✅', PAID_PARTIAL: '⚠️', REFUND_INITIATED: '🔄',
-  }[status] || '📌');
+    PENDING: <Clock size={16} />, 
+    IN_PROGRESS: <PenTool size={16} />, 
+    WORK_SUBMITTED: <Send size={16} />,
+    AQA_REVIEW: <SearchCode size={16} />, 
+    PAID_FULL: <CheckCircle2 size={16} />, 
+    PAID_PARTIAL: <AlertTriangle size={16} />, 
+    REFUND_INITIATED: <Undo2 size={16} />,
+  }[status] || <ClipboardList size={16} />);
 
   const statusClass = (status) => {
     if (['PAID_FULL'].includes(status)) return 'status-success';
@@ -165,27 +176,27 @@ export default function FreelancerDashboard({ state, dispatch, mode = 'browse' }
   }[status] || 'var(--muted)');
 
   const proposalStatusIcon = (status) => ({
-    pending: '⏳',
-    accepted: '✅',
-    rejected: '❌',
-    withdrawn: '↩️',
-  }[status] || '📌');
+    pending: <Clock size={16} />,
+    accepted: <CheckCircle2 size={16} />,
+    rejected: <XCircle size={16} />,
+    withdrawn: <Undo2 size={16} />,
+  }[status] || <ClipboardList size={16} />);
 
   // ── BROWSE MODE: Find open projects ──────────────────────────────────
   if (mode === 'browse') {
     const openProjects = state.openProjects || [];
 
     return (
-      <div className="dashboard-panel">
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="dashboard-panel">
         <div className="panel-header">
-          <h2>🔍 Find Work</h2>
-          <button className="btn btn-sm btn-ghost" onClick={loadOpenProjects}>
-            🔄 Refresh
+          <h2 className="flex items-center gap-2"><Search size={24} color="var(--cyan)" /> Find Work</h2>
+          <button className="btn btn-sm btn-ghost flex items-center gap-1" onClick={loadOpenProjects}>
+            <RefreshCw size={14} /> Refresh
           </button>
         </div>
 
-        {state.errors.openProjects && <div className="error-msg">❌ {state.errors.openProjects}</div>}
-        {state.errors.proposal && <div className="error-msg">❌ {state.errors.proposal}</div>}
+        {state.errors.openProjects && <div className="error-msg flex items-center gap-1"><AlertCircle size={16} /> {state.errors.openProjects}</div>}
+        {state.errors.proposal && <div className="error-msg flex items-center gap-1"><AlertCircle size={16} /> {state.errors.proposal}</div>}
 
         {proposalSuccess && (
           <div className="success-banner animate-fade-in" style={{ marginBottom: 16 }}>
@@ -196,17 +207,17 @@ export default function FreelancerDashboard({ state, dispatch, mode = 'browse' }
 
         {openProjects.length === 0 ? (
           <div className="empty-state">
-            <div className="empty-icon">🔍</div>
+            <div className="empty-icon text-gray-500 mb-4 flex justify-center"><Search size={48} /></div>
             <h3>No Open Projects</h3>
             <p>No projects are currently accepting proposals. Check back later!</p>
           </div>
         ) : (
           <div className="project-grid">
             {openProjects.map(p => (
-              <div key={p.id} className="project-card browse-card">
+              <motion.div whileHover={{ y: -5 }} key={p.id} className="project-card browse-card">
                 <div className="project-card-header">
-                  <span className="project-status" style={{ color: 'var(--green)' }}>
-                    💰 OPEN FOR PROPOSALS
+                  <span className="project-status flex items-center gap-1" style={{ color: 'var(--green)' }}>
+                    <DollarSign size={14} /> OPEN FOR PROPOSALS
                   </span>
                   {p.risk_level && (
                     <span className={`risk-badge risk-${(p.risk_level || 'medium').toLowerCase()}`}>
@@ -309,11 +320,11 @@ export default function FreelancerDashboard({ state, dispatch, mode = 'browse' }
                     </div>
                   </div>
                 )}
-              </div>
+              </motion.div>
             ))}
           </div>
         )}
-      </div>
+      </motion.div>
     );
   }
 
@@ -322,11 +333,11 @@ export default function FreelancerDashboard({ state, dispatch, mode = 'browse' }
     const proposals = state.ownProposals || [];
 
     return (
-      <div className="dashboard-panel">
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="dashboard-panel">
         <div className="panel-header">
-          <h2>📨 My Proposals</h2>
-          <button className="btn btn-sm btn-ghost" onClick={loadOwnProposals}>
-            🔄 Refresh
+          <h2 className="flex items-center gap-2"><Mail size={24} color="var(--cyan)" /> My Proposals</h2>
+          <button className="btn btn-sm btn-ghost flex items-center gap-1" onClick={loadOwnProposals}>
+            <RefreshCw size={14} /> Refresh
           </button>
         </div>
 
@@ -334,17 +345,17 @@ export default function FreelancerDashboard({ state, dispatch, mode = 'browse' }
 
         {proposals.length === 0 ? (
           <div className="empty-state">
-            <div className="empty-icon">📨</div>
+            <div className="empty-icon text-gray-500 mb-4 flex justify-center"><Mail size={48} /></div>
             <h3>No Proposals Yet</h3>
             <p>Browse open projects and submit your first proposal to get started.</p>
-            <button className="btn btn-primary" onClick={() => dispatch({ type: ACTIONS.SET_VIEW, payload: 'browse' })}>
-              🔍 Find Work
+            <button className="btn btn-primary flex items-center gap-2" onClick={() => dispatch({ type: ACTIONS.SET_VIEW, payload: 'browse' })}>
+              <Search size={18} /> Find Work
             </button>
           </div>
         ) : (
           <div className="proposals-list">
             {proposals.map(prop => (
-              <div key={prop.id} className={`proposal-card proposal-${prop.status}`}>
+              <motion.div whileHover={{ scale: 1.01 }} key={prop.id} className={`proposal-card proposal-${prop.status}`}>
                 <div className="proposal-card-header">
                   <div className="proposal-status-row">
                     <span className="proposal-status-badge" style={{
@@ -388,10 +399,10 @@ export default function FreelancerDashboard({ state, dispatch, mode = 'browse' }
                 {prop.status === 'pending' && (
                   <div className="proposal-actions">
                     <button
-                      className="btn btn-sm btn-ghost"
+                      className="btn btn-sm btn-ghost flex items-center gap-1"
                       onClick={() => handleWithdrawProposal(prop.id)}
                     >
-                      ↩️ Withdraw Proposal
+                      <Undo2 size={14} /> Withdraw Proposal
                     </button>
                   </div>
                 )}
@@ -401,11 +412,11 @@ export default function FreelancerDashboard({ state, dispatch, mode = 'browse' }
                     🎉 Your proposal was accepted! Check your Active Projects.
                   </div>
                 )}
-              </div>
+              </motion.div>
             ))}
           </div>
         )}
-      </div>
+      </motion.div>
     );
   }
 
@@ -413,53 +424,55 @@ export default function FreelancerDashboard({ state, dispatch, mode = 'browse' }
   // Project list view
   if (!selectedProject) {
     return (
-      <div className="dashboard-panel">
+      <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} className="dashboard-panel">
         <div className="panel-header">
-          <h2>👩‍💻 Active Projects</h2>
-          <button className="btn btn-sm btn-ghost" onClick={loadProjects}>
-            🔄 Refresh
+          <h2 className="flex items-center gap-2"><Briefcase size={24} color="var(--cyan)" /> Active Projects</h2>
+          <button className="btn btn-sm btn-ghost flex items-center gap-1" onClick={loadProjects}>
+            <RefreshCw size={14} /> Refresh
           </button>
         </div>
 
-        {state.errors.projects && <div className="error-msg">❌ {state.errors.projects}</div>}
+        {state.errors.projects && <div className="error-msg flex items-center gap-1"><AlertCircle size={16} /> {state.errors.projects}</div>}
 
         {state.projects.length === 0 ? (
           <div className="empty-state">
-            <div className="empty-icon">📋</div>
+            <div className="empty-icon text-gray-500 mb-4 flex justify-center"><Briefcase size={48} /></div>
             <h3>No Active Projects</h3>
             <p>Submit proposals on open projects to get assigned work.</p>
-            <button className="btn btn-primary" onClick={() => dispatch({ type: ACTIONS.SET_VIEW, payload: 'browse' })}>
-              🔍 Find Work
+            <button className="btn btn-primary flex items-center gap-2" onClick={() => dispatch({ type: ACTIONS.SET_VIEW, payload: 'browse' })}>
+              <Search size={18} /> Find Work
             </button>
           </div>
         ) : (
           <div className="project-grid">
             {state.projects.map(p => (
-              <div key={p.id} className="project-card" onClick={() => setSelectedProject(p)}>
+              <motion.div whileHover={{ y: -5 }} key={p.id} className="project-card" onClick={() => setSelectedProject(p)}>
                 <div className="project-card-header">
-                  <span className="project-status" style={{
+                  <span className="project-status flex items-center gap-1" style={{
                     color: p.status === 'active' ? 'var(--green)' : p.status === 'completed' ? 'var(--cyan)' : 'var(--yellow)'
                   }}>
-                    {p.status === 'active' ? '🔨' : p.status === 'completed' ? '✅' : '💰'} {p.status.toUpperCase()}
+                    {p.status === 'active' ? <PenTool size={16} /> : p.status === 'completed' ? <CheckCircle2 size={16} /> : <DollarSign size={16} />} 
+                    {p.status.toUpperCase()}
                   </span>
                 </div>
                 <p className="project-desc">
                   {p.description.length > 120 ? p.description.slice(0, 120) + '…' : p.description}
                 </p>
-                <div className="project-card-footer">
-                  {p.budget && <span className="mono">💰 ${p.budget.toLocaleString()}</span>}
-                  <span>📦 {p.milestones?.length || 0} milestones</span>
+                <div className="project-card-footer flex items-center gap-3">
+                  {p.budget && <span className="mono flex items-center gap-1"><DollarSign size={14} /> {p.budget.toLocaleString()}</span>}
+                  <span className="flex items-center gap-1"><Package size={14} /> {p.milestones?.length || 0} milestones</span>
                   {p.milestones && (
-                    <span className="mono">
+                    <span className="mono flex items-center gap-1 text-green-400">
+                      <CheckCircle2 size={14} />
                       {p.milestones.filter(m => ['PAID_FULL', 'PAID_PARTIAL'].includes(m.status)).length}/{p.milestones.length} done
                     </span>
                   )}
                 </div>
-              </div>
+              </motion.div>
             ))}
           </div>
         )}
-      </div>
+      </motion.div>
     );
   }
 
@@ -467,16 +480,16 @@ export default function FreelancerDashboard({ state, dispatch, mode = 'browse' }
   const milestones = selectedProject.milestones || [];
 
   return (
-    <div className="dashboard-panel">
+    <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="dashboard-panel">
       <div className="panel-header">
-        <h2>👩‍💻 Project Work</h2>
-        <button className="btn btn-ghost" onClick={() => { setSelectedProject(null); setSubmissionResult(null); }}>
-          ← Back to Projects
+        <h2 className="flex items-center gap-2"><PenTool size={24} color="var(--cyan)" /> Project Work</h2>
+        <button className="btn btn-ghost flex items-center gap-1" onClick={() => { setSelectedProject(null); setSubmissionResult(null); }}>
+          <Undo2 size={16} /> Back to Projects
         </button>
       </div>
 
-      {state.errors.freelancer && <div className="error-msg">❌ {state.errors.freelancer}</div>}
-      {state.errors.aqa && <div className="error-msg">❌ {state.errors.aqa}</div>}
+      {state.errors.freelancer && <div className="error-msg flex items-center gap-1"><AlertCircle size={16} /> {state.errors.freelancer}</div>}
+      {state.errors.aqa && <div className="error-msg flex items-center gap-1"><AlertCircle size={16} /> {state.errors.aqa}</div>}
 
       {/* Last submission result */}
       {submissionResult && (
@@ -518,15 +531,15 @@ export default function FreelancerDashboard({ state, dispatch, mode = 'browse' }
 
             <div className="fms-actions">
               {ms.status === 'PENDING' && (
-                <button className="btn btn-accent"
+                <button className="btn btn-accent flex items-center gap-2"
                   onClick={() => handleActivate(selectedProject, ms)}
                   disabled={state.loading.activate}>
-                  {state.loading.activate ? <><span className="spinner" /> Activating...</> : '▶ Activate Milestone'}
+                  {state.loading.activate ? <><span className="spinner" /> Activating...</> : <><Play size={16} /> Activate Milestone</>}
                 </button>
               )}
               {ms.status === 'IN_PROGRESS' && (
-                <button className="btn btn-primary" onClick={() => setSelectedMs(ms.id)}>
-                  📝 Submit Work
+                <button className="btn btn-primary flex items-center gap-2" onClick={() => setSelectedMs(ms.id)}>
+                  <ClipboardList size={16} /> Submit Work
                 </button>
               )}
             </div>
@@ -569,6 +582,6 @@ export default function FreelancerDashboard({ state, dispatch, mode = 'browse' }
           </div>
         ))}
       </div>
-    </div>
+    </motion.div>
   );
 }

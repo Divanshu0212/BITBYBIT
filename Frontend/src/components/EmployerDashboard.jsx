@@ -1,6 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { ACTIONS } from '../store/actions';
 import * as api from '../api';
+import { motion } from 'framer-motion';
+import { 
+  Building2, BrainCircuit, Wallet, ClipboardCheck, ArrowLeft, 
+  CheckCircle2, DollarSign, Clock, AlertTriangle, AlertCircle,
+  Users, MailCheck, UserCheck, XCircle, Search, Package
+} from 'lucide-react';
 
 // Simple SVG-based DAG renderer
 function DAGView({ milestones, dag }) {
@@ -219,7 +225,11 @@ export default function EmployerDashboard({ state, dispatch }) {
   };
 
   const statusIcon = {
-    draft: '📝', decomposed: '🤖', funded: '💰', active: '🔨', completed: '✅',
+    draft: <ClipboardCheck size={16} />, 
+    decomposed: <BrainCircuit size={16} />, 
+    funded: <Wallet size={16} />, 
+    active: <Building2 size={16} />, 
+    completed: <CheckCircle2 size={16} />,
   };
 
   const statusColor = {
@@ -256,21 +266,26 @@ export default function EmployerDashboard({ state, dispatch }) {
         </div>
 
         {state.errors.projects && (
-          <div className="error-msg">❌ {state.errors.projects}</div>
+          <div className="error-msg"><AlertCircle size={16} className="inline mr-1" /> {state.errors.projects}</div>
         )}
 
         {state.projects.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-icon">📋</div>
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="empty-state">
+            <div className="empty-icon"><ClipboardCheck size={48} className="mx-auto text-gray-400" /></div>
             <h3>No Projects Yet</h3>
             <p>Post your first project and let AI decompose it into milestones. Freelancers will send proposals!</p>
-          </div>
+          </motion.div>
         ) : (
           <div className="project-grid">
             {state.projects.map(p => (
-              <div key={p.id} className="project-card" onClick={() => openProject(p)}>
+              <motion.div 
+                whileHover={{ y: -5 }}
+                key={p.id} 
+                className="project-card" 
+                onClick={() => openProject(p)}
+              >
                 <div className="project-card-header">
-                  <span className="project-status" style={{ color: statusColor[p.status] }}>
+                  <span className="project-status flex items-center gap-1" style={{ color: statusColor[p.status], display: 'flex' }}>
                     {statusIcon[p.status]} {p.status.toUpperCase()}
                   </span>
                   {p.risk_level && (
@@ -280,18 +295,18 @@ export default function EmployerDashboard({ state, dispatch }) {
                   )}
                 </div>
                 <p className="project-desc">{p.description.length > 120 ? p.description.slice(0, 120) + '…' : p.description}</p>
-                <div className="project-card-footer">
-                  {p.budget && <span className="mono">💰 ${p.budget.toLocaleString()}</span>}
-                  {p.total_estimated_days && <span>📅 {p.total_estimated_days}d</span>}
-                  <span>📦 {p.milestones?.length || 0} milestones</span>
+                <div className="project-card-footer flex items-center gap-3">
+                  {p.budget && <span className="mono flex items-center gap-1"><DollarSign size={14} /> {p.budget.toLocaleString()}</span>}
+                  {p.total_estimated_days && <span className="flex items-center gap-1"><Clock size={14} /> {p.total_estimated_days}d</span>}
+                  <span className="flex items-center gap-1"><Package size={14} /> {p.milestones?.length || 0} milestones</span>
                   {p.status === 'funded' && !p.freelancer_id && (
-                    <span style={{ color: 'var(--cyan)' }}>📨 Accepting Proposals</span>
+                    <span style={{ color: 'var(--cyan)' }} className="flex items-center gap-1"><MailCheck size={14} /> Accepting Proposals</span>
                   )}
                   {p.freelancer_id && (
-                    <span style={{ color: 'var(--green)' }}>👤 Freelancer Assigned</span>
+                    <span style={{ color: 'var(--green)' }} className="flex items-center gap-1"><UserCheck size={14} /> Freelancer Assigned</span>
                   )}
                 </div>
-              </div>
+              </motion.div>
             ))}
           </div>
         )}
@@ -301,16 +316,18 @@ export default function EmployerDashboard({ state, dispatch }) {
 
   // ── Create / Review / Fund / Proposals / Detail Views ─────────────────
   return (
-    <div className="dashboard-panel">
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="dashboard-panel">
       <div className="panel-header">
-        <h2>🏢 {
+        <h2 className="flex items-center gap-2">
+          <Building2 size={24} color="var(--cyan)" />
+          {
           phase === 'create' ? 'Post a New Project' :
           phase === 'proposals' ? 'Review Proposals' :
           phase === 'detail' ? 'Project Details' :
           'Project Setup'
         }</h2>
-        <button className="btn btn-ghost" onClick={() => { setPhase('list'); setSelectedProject(null); }}>
-          ← Back to Projects
+        <button className="btn btn-ghost flex items-center gap-1" onClick={() => { setPhase('list'); setSelectedProject(null); }}>
+          <ArrowLeft size={16} /> Back to Projects
         </button>
       </div>
 
@@ -330,39 +347,39 @@ export default function EmployerDashboard({ state, dispatch }) {
               />
             </div>
 
-            {state.errors.create && <div className="error-msg">❌ {state.errors.create}</div>}
-            {state.errors.decompose && <div className="error-msg">❌ {state.errors.decompose}</div>}
+            {state.errors.create && <div className="error-msg flex items-center gap-1"><XCircle size={16} /> {state.errors.create}</div>}
+            {state.errors.decompose && <div className="error-msg flex items-center gap-1"><XCircle size={16} /> {state.errors.decompose}</div>}
 
             {!selectedProject && (
               <button
-                className="btn btn-primary btn-lg"
+                className="btn btn-primary btn-lg flex items-center gap-2"
                 onClick={handleCreate}
                 disabled={isLoading.create || !description.trim()}
               >
-                {isLoading.create ? <><span className="spinner" /> Creating...</> : '📝 Create Project'}
+                {isLoading.create ? <><span className="spinner" /> Creating...</> : <><ClipboardCheck size={18} /> Create Project</>}
               </button>
             )}
 
             {selectedProject && selectedProject.milestones?.length === 0 && (
               <button
-                className="btn btn-primary btn-lg"
+                className="btn btn-primary btn-lg flex items-center gap-2"
                 onClick={handleDecompose}
                 disabled={isLoading.decompose}
               >
-                {isLoading.decompose ? <><span className="spinner" /> AI is analyzing your project...</> : '🤖 Decompose with AI'}
+                {isLoading.decompose ? <><span className="spinner" /> AI is analyzing your project...</> : <><BrainCircuit size={18} /> Decompose with AI</>}
               </button>
             )}
           </div>
 
           {/* Milestones Review */}
           {selectedProject && selectedProject.milestones?.length > 0 && (
-            <div className="animate-fade-in">
-              <div className="decomp-meta">
-                <span className={`risk-badge risk-${(selectedProject.risk_level || 'medium').toLowerCase()}`}>
-                  ⚠ {selectedProject.risk_level || 'Medium'} Risk
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="animate-fade-in">
+              <div className="decomp-meta flex items-center gap-3">
+                <span className={`risk-badge flex items-center gap-1 risk-${(selectedProject.risk_level || 'medium').toLowerCase()}`}>
+                  <AlertTriangle size={14} /> {selectedProject.risk_level || 'Medium'} Risk
                 </span>
-                <span className="meta-tag">📅 {selectedProject.total_estimated_days || '?'} days estimated</span>
-                <span className="meta-tag">📦 {selectedProject.milestones.length} milestones</span>
+                <span className="meta-tag flex items-center gap-1"><Clock size={14} /> {selectedProject.total_estimated_days || '?'} days estimated</span>
+                <span className="meta-tag flex items-center gap-1"><Package size={14} /> {selectedProject.milestones.length} milestones</span>
               </div>
 
               <DAGView
@@ -428,7 +445,7 @@ export default function EmployerDashboard({ state, dispatch }) {
                   </div>
                 </div>
               )}
-            </div>
+            </motion.div>
           )}
         </>
       )}
@@ -624,6 +641,6 @@ export default function EmployerDashboard({ state, dispatch }) {
           </div>
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }

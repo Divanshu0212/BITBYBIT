@@ -46,7 +46,7 @@ export default function AuthPage({ dispatch }) {
         <div className="auth-header">
           <div className="auth-logo">
             <span className="logo-icon">⚡</span>
-            <span className="logo-text">BITBYBIT</span>
+            <span className="logo-text">Snack Overflow</span>
           </div>
           <p className="auth-tagline">Autonomous AI Project & Payment Intermediary</p>
         </div>

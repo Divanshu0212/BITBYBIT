@@ -1,5 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import * as api from '../api';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Wallet, CheckCircle2, Undo2, Link2, Coins, Pin, Lock, Unlock, ShieldCheck, ShieldAlert, List } from 'lucide-react';
 
 const TYPE_COLORS = {
   DEPOSIT: 'var(--cyan)',
@@ -9,10 +11,10 @@ const TYPE_COLORS = {
 };
 
 const TYPE_ICONS = {
-  DEPOSIT: '💰',
-  PAYMENT: '✅',
-  REFUND: '🔄',
-  STATE_CHANGE: '🔗',
+  DEPOSIT: <Wallet size={16} />,
+  PAYMENT: <CheckCircle2 size={16} />,
+  REFUND: <Undo2 size={16} />,
+  STATE_CHANGE: <Link2 size={16} />,
 };
 
 export default function EscrowLedger({ state, dispatch }) {
@@ -76,7 +78,7 @@ export default function EscrowLedger({ state, dispatch }) {
   return (
     <div className="ledger-panel">
       <div className="ledger-header">
-        <h3>⛓ Escrow Ledger</h3>
+        <h3 className="flex items-center gap-2"><Coins size={20} color="var(--cyan)" /> Escrow Ledger</h3>
 
         {/* Project selector */}
         {projects.length > 1 && (
@@ -112,15 +114,15 @@ export default function EscrowLedger({ state, dispatch }) {
         )}
 
         {escrow && (
-          <button className="btn btn-sm btn-ghost" onClick={handleVerify} title="Verify chain integrity">
-            🔐 Verify
+          <button className="btn btn-sm btn-ghost flex items-center gap-1 mt-2" onClick={handleVerify} title="Verify chain integrity">
+            <Lock size={14} /> Verify
           </button>
         )}
 
         {integrity && (
-          <div className={`integrity-badge ${integrity.valid ? 'valid' : 'invalid'}`}>
-            {integrity.valid ? '✅ Chain Valid' : `❌ Broken at entry ${integrity.broken_at_index}`}
-            <span className="mono"> ({integrity.total_entries} entries)</span>
+          <div className={`integrity-badge mt-2 ${integrity.valid ? 'valid' : 'invalid'}`}>
+            {integrity.valid ? <span className="flex items-center gap-1"><ShieldCheck size={14} /> Chain Valid</span> : <span className="flex items-center gap-1"><ShieldAlert size={14} /> Broken at entry {integrity.broken_at_index}</span>}
+            <span className="mono text-xs opacity-70"> ({integrity.total_entries} entries)</span>
           </div>
         )}
       </div>
@@ -128,19 +130,23 @@ export default function EscrowLedger({ state, dispatch }) {
       <div className="ledger-entries">
         {ledger.length === 0 ? (
           <div className="ledger-empty">
-            <div className="empty-icon">📋</div>
+            <div className="empty-icon flex justify-center text-gray-500 mb-2"><List size={32} /></div>
             <p>No transactions yet</p>
             <p className="text-muted">Fund a project to see escrow activity</p>
           </div>
         ) : (
-          ledger.map((entry, i) => (
-            <div
-              key={entry.id || i}
-              className="ledger-entry animate-slide-in"
-              style={{ borderLeftColor: TYPE_COLORS[entry.type] || 'var(--muted)' }}
-            >
-              <div className="entry-header">
-                <span className="entry-icon">{TYPE_ICONS[entry.type] || '📌'}</span>
+          <AnimatePresence>
+            {ledger.map((entry, i) => (
+              <motion.div
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.3, delay: i * 0.05 }}
+                key={entry.id || i}
+                className="ledger-entry"
+                style={{ borderLeftColor: TYPE_COLORS[entry.type] || 'var(--muted)' }}
+              >
+                <div className="entry-header">
+                  <span className="entry-icon flex items-center">{TYPE_ICONS[entry.type] || <Pin size={16} />}</span>
                 <span className="entry-event" style={{ color: TYPE_COLORS[entry.type] }}>
                   {entry.event}
                 </span>
@@ -153,10 +159,11 @@ export default function EscrowLedger({ state, dispatch }) {
               <div className="entry-details">{entry.details}</div>
               <div className="entry-time mono">{formatTime(entry.timestamp)}</div>
               <div className="entry-hash mono" title={entry.tx_hash}>
-                0x{entry.tx_hash?.slice(0, 12)}…
+                hx:{entry.tx_hash.slice(0, 8)}…{entry.tx_hash.slice(-8)}
               </div>
-            </div>
-          ))
+            </motion.div>
+          ))}
+          </AnimatePresence>
         )}
         <div ref={bottomRef} />
       </div>

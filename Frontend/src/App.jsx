@@ -2,6 +2,7 @@ import React, { useReducer, useEffect } from 'react';
 import { reducer, initialState } from './store/reducer';
 import { ACTIONS } from './store/actions';
 import { clearAuth, getToken } from './api';
+import { LineChart, Trophy, Search, Mail, Briefcase, BarChart2, LogOut, Zap, Building, User } from 'lucide-react';
 
 import AuthPage from './components/AuthPage';
 import EscrowLedger from './components/EscrowLedger';
@@ -36,17 +37,17 @@ export default function App() {
 
   const NAV_ITEMS = isEmployer
     ? [
-        { key: 'projects', icon: '🏢', label: 'My Projects' },
-        { key: 'analytics', icon: '📈', label: 'Analytics' },
-        { key: 'leaderboard', icon: '🏆', label: 'PFI Leaderboard' },
-      ]
+      { key: 'projects', icon: <Building size={18} />, label: 'My Projects' },
+      { key: 'analytics', icon: <LineChart size={18} />, label: 'Analytics' },
+      { key: 'leaderboard', icon: <Trophy size={18} />, label: 'PFI Leaderboard' },
+    ]
     : [
-        { key: 'browse', icon: '🔍', label: 'Find Work' },
-        { key: 'proposals', icon: '📨', label: 'My Proposals' },
-        { key: 'projects', icon: '👩‍💻', label: 'Active Projects' },
-        { key: 'pfi', icon: '📊', label: 'My PFI Score' },
-        { key: 'leaderboard', icon: '🏆', label: 'Leaderboard' },
-      ];
+      { key: 'browse', icon: <Search size={18} />, label: 'Find Work' },
+      { key: 'proposals', icon: <Mail size={18} />, label: 'My Proposals' },
+      { key: 'projects', icon: <Briefcase size={18} />, label: 'Active Projects' },
+      { key: 'pfi', icon: <BarChart2 size={18} />, label: 'My PFI Score' },
+      { key: 'leaderboard', icon: <Trophy size={18} />, label: 'Leaderboard' },
+    ];
 
   const renderActiveView = () => {
     switch (state.activeView) {
@@ -79,18 +80,21 @@ export default function App() {
       <header className="app-header">
         <div className="header-left">
           <div className="logo">
-            <span className="logo-icon">⚡</span>
-            <span className="logo-text">BITBYBIT</span>
+            <span className="logo-icon"><Zap size={22} color="var(--cyan)" /></span>
+            <span className="logo-text">Snack Overflow</span>
           </div>
           <span className="logo-tagline">Autonomous AI Project & Payment Intermediary</span>
         </div>
         <div className="header-right">
           <div className="user-info">
-            <span className="user-role-badge">{isEmployer ? '🏢' : '👩‍💻'} {state.user.role}</span>
+            <span className="user-role-badge">
+              {isEmployer ? <Building size={14} className="inline-block mr-1" /> : <User size={14} className="inline-block mr-1" />}
+              {state.user.role}
+            </span>
             <span className="user-name">{state.user.name}</span>
           </div>
-          <button className="btn btn-sm btn-ghost" onClick={handleLogout} title="Sign out">
-            🚪 Logout
+          <button className="btn btn-sm btn-ghost" onClick={handleLogout} title="Sign out" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <LogOut size={16} /> Logout
           </button>
         </div>
       </header>
@@ -106,7 +110,7 @@ export default function App() {
                 className={`nav-btn ${state.activeView === item.key ? 'active' : ''}`}
                 onClick={() => dispatch({ type: ACTIONS.SET_VIEW, payload: item.key })}
               >
-                <span className="nav-icon">{item.icon}</span>
+                <span className="nav-icon" style={{ display: 'flex' }}>{item.icon}</span>
                 <span className="nav-label">{item.label}</span>
               </button>
             ))}

@@ -14,6 +14,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
@@ -127,7 +128,10 @@ async def deposit_funds(db: AsyncSession, escrow_id: uuid.UUID, amount: float) -
     escrow.state = "FUNDED"
 
     # Allocate milestone budgets proportionally by complexity
-    project = await db.get(Project, escrow.project_id)
+    result = await db.execute(
+        select(Project).options(selectinload(Project.milestones)).where(Project.id == escrow.project_id)
+    )
+    project = result.scalar_one_or_none()
     if project:
         milestones = list(project.milestones)
         total_complexity = sum(m.complexity_score or 5 for m in milestones)
@@ -231,14 +235,21 @@ async def release_payment(
         raise ValueError("Escrow or milestone not found")
 
     payout_ratio = min(percent_complete, 100) / 100
-    payout = round(milestone.payment_amount * payout_ratio, 2)
+    target_released = round(milestone.payment_amount * payout_ratio, 2)
+    payout = round(target_released - milestone.payment_released, 2)
+
+    if payout <= 0:
+        if percent_complete >= 100:
+            milestone.status = "PAID_FULL"
+            await db.flush()
+        return escrow, milestone
 
     # HMAC verification for financial integrity
     signature = _compute_hmac("PAYMENT_RELEASED", payout, str(escrow_id))
     if not _verify_hmac(signature, "PAYMENT_RELEASED", payout, str(escrow_id)):
         raise ValueError("HMAC verification failed for payment")
 
-    milestone.payment_released = payout
+    milestone.payment_released += payout
     milestone.status = "PAID_FULL" if percent_complete >= 100 else "PAID_PARTIAL"
     escrow.released_funds += payout
     escrow.locked_funds -= payout
