@@ -274,6 +274,13 @@ async def submit_work(
     if not milestone or milestone.project_id != project_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Milestone not found")
 
+    # Enforce: code milestones MUST have a GitHub repo URL
+    if (milestone.task_type or "").lower() == "code" and not data.repo_url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="GitHub repository URL is mandatory for code milestones. Please provide a repo_url.",
+        )
+
     # 1. Submit work
     try:
         await escrow_service.submit_work(db, escrow.id, milestone_id, data.submission_text, data.submission_url)
@@ -298,6 +305,8 @@ async def submit_work(
             scoring_weights=milestone.scoring_weights,
             submission=full_submission,
             api_key=api_key,
+            repo_url=data.repo_url,
+            commit_hash=data.commit_hash,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Verification failed: {exc}")

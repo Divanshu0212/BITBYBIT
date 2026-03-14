@@ -19,6 +19,10 @@ class Settings:
 
     PAYMENT_HMAC_SECRET: str = os.getenv("PAYMENT_HMAC_SECRET", "change-me-in-production")
 
+    # SonarQube (optional — degrades gracefully if not configured)
+    SONARQUBE_URL: str = os.getenv("SONARQUBE_URL", "")
+    SONARQUBE_TOKEN: str = os.getenv("SONARQUBE_TOKEN", "")
+
     CORS_ORIGINS: list[str] = [
         origin.strip()
         for origin in os.getenv(

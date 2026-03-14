@@ -61,6 +61,8 @@ class DecomposeRequest(BaseModel):
 class WorkSubmission(BaseModel):
     submission_text: str = Field(min_length=1, max_length=10000)
     submission_url: str | None = Field(None, max_length=1000)
+    repo_url: str | None = Field(None, max_length=500, description="GitHub repo URL (mandatory for code milestones)")
+    commit_hash: str | None = Field(None, max_length=64, description="Exact commit hash to verify")
 
 
 class HITLResolveRequest(BaseModel):
