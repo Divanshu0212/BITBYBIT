@@ -145,6 +145,12 @@ export async function fundProject(projectId, amount) {
   });
 }
 
+export async function deleteProject(projectId) {
+  return await apiFetch(`/employer/projects/${projectId}`, {
+    method: 'DELETE',
+  });
+}
+
 export async function assignFreelancer(projectId, freelancerId) {
   return await apiFetch(`/employer/projects/${projectId}/assign/${freelancerId}`, {
     method: 'POST',

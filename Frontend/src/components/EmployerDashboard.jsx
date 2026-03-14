@@ -6,7 +6,7 @@ import {
   Building2, BrainCircuit, Wallet, ClipboardCheck, ArrowLeft, 
   CheckCircle2, DollarSign, Clock, AlertTriangle, AlertCircle,
   MailCheck, UserCheck, XCircle, Package,
-  HelpCircle, Send, ChevronRight, Sparkles
+  HelpCircle, Send, ChevronRight, Sparkles, Trash2
 } from 'lucide-react';
 
 // Simple SVG-based DAG renderer
@@ -124,6 +124,7 @@ export default function EmployerDashboard({ state, dispatch }) {
   const [clarifyAnswers, setClarifyAnswers] = useState({});
   const [clarifyAssumptions, setClarifyAssumptions] = useState([]);
   const [progressStep, setProgressStep] = useState('');
+  const [deleteConfirmId, setDeleteConfirmId] = useState(null);
 
   const isLoading = state.loading;
 
@@ -314,6 +315,23 @@ export default function EmployerDashboard({ state, dispatch }) {
     }
   };
 
+  const handleDeleteProject = async (projectId) => {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { delete: true } });
+    try {
+      await api.deleteProject(projectId);
+      setDeleteConfirmId(null);
+      if (selectedProject?.id === projectId) {
+        setSelectedProject(null);
+        setPhase('list');
+      }
+      await loadProjects();
+    } catch (err) {
+      dispatch({ type: ACTIONS.SET_ERROR, payload: { delete: err.message } });
+    } finally {
+      dispatch({ type: ACTIONS.SET_LOADING, payload: { delete: false } });
+    }
+  };
+
   const statusIcon = {
     draft: <ClipboardCheck size={16} />, 
     decomposed: <BrainCircuit size={16} />, 
@@ -379,11 +397,45 @@ export default function EmployerDashboard({ state, dispatch }) {
                   <span className="project-status flex items-center gap-1" style={{ color: statusColor[p.status], display: 'flex' }}>
                     {statusIcon[p.status]} {p.status.toUpperCase()}
                   </span>
-                  {p.risk_level && (
-                    <span className={`risk-badge risk-${(p.risk_level || 'medium').toLowerCase()}`}>
-                      {p.risk_level}
-                    </span>
-                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {p.risk_level && (
+                      <span className={`risk-badge risk-${(p.risk_level || 'medium').toLowerCase()}`}>
+                        {p.risk_level}
+                      </span>
+                    )}
+                    {p.status !== 'active' && (
+                      deleteConfirmId === p.id ? (
+                        <div style={{ display: 'flex', gap: 4 }} onClick={e => e.stopPropagation()}>
+                          <button
+                            className="btn btn-sm"
+                            style={{ background: 'var(--red)', color: '#fff', fontSize: 11, padding: '2px 10px', borderRadius: 6 }}
+                            onClick={() => handleDeleteProject(p.id)}
+                            disabled={isLoading.delete}
+                          >
+                            {isLoading.delete ? '...' : 'Delete'}
+                          </button>
+                          <button
+                            className="btn btn-sm btn-ghost"
+                            style={{ fontSize: 11, padding: '2px 8px' }}
+                            onClick={() => setDeleteConfirmId(null)}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          className="btn btn-sm btn-ghost"
+                          style={{ padding: '4px 6px', opacity: 0.5, transition: 'opacity 0.2s' }}
+                          onClick={e => { e.stopPropagation(); setDeleteConfirmId(p.id); }}
+                          onMouseEnter={e => e.currentTarget.style.opacity = 1}
+                          onMouseLeave={e => e.currentTarget.style.opacity = 0.5}
+                          title="Delete project"
+                        >
+                          <Trash2 size={14} style={{ color: 'var(--red)' }} />
+                        </button>
+                      )
+                    )}
+                  </div>
                 </div>
                 <p className="project-desc">{p.description.length > 120 ? p.description.slice(0, 120) + '…' : p.description}</p>
                 <div className="project-card-footer flex items-center gap-3">
@@ -418,10 +470,45 @@ export default function EmployerDashboard({ state, dispatch }) {
           phase === 'detail' ? 'Project Details' :
           'Project Setup'
         }</h2>
-        <button className="btn btn-ghost flex items-center gap-1" onClick={() => { setPhase('list'); setSelectedProject(null); resetClarification(); }}>
-          <ArrowLeft size={16} /> Back to Projects
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {selectedProject && selectedProject.status !== 'active' && (
+            deleteConfirmId === selectedProject.id ? (
+              <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                <button
+                  className="btn btn-sm"
+                  style={{ background: 'var(--red)', color: '#fff', fontSize: 12, padding: '4px 12px', borderRadius: 6 }}
+                  onClick={() => handleDeleteProject(selectedProject.id)}
+                  disabled={isLoading.delete}
+                >
+                  {isLoading.delete ? 'Deleting...' : 'Confirm Delete'}
+                </button>
+                <button
+                  className="btn btn-sm btn-ghost"
+                  style={{ fontSize: 12 }}
+                  onClick={() => setDeleteConfirmId(null)}
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                className="btn btn-ghost flex items-center gap-1"
+                style={{ color: 'var(--red)' }}
+                onClick={() => setDeleteConfirmId(selectedProject.id)}
+              >
+                <Trash2 size={14} /> Delete
+              </button>
+            )
+          )}
+          <button className="btn btn-ghost flex items-center gap-1" onClick={() => { setPhase('list'); setSelectedProject(null); resetClarification(); setDeleteConfirmId(null); }}>
+            <ArrowLeft size={16} /> Back to Projects
+          </button>
+        </div>
       </div>
+
+      {state.errors.delete && (
+        <div className="error-msg flex items-center gap-1" style={{ marginBottom: 12 }}><AlertCircle size={16} /> {state.errors.delete}</div>
+      )}
 
       {/* Create Phase — One-click create + analyze */}
       {phase === 'create' && (

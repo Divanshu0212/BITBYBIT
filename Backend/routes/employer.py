@@ -94,6 +94,27 @@ async def get_project(
     return ProjectResponse.model_validate(project)
 
 
+@router.delete("/projects/{project_id}", status_code=status.HTTP_200_OK)
+async def delete_project(
+    project_id: uuid.UUID,
+    user: Annotated[User, Depends(employer_dep)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Delete a project. Only allowed for projects that are not active (no ongoing work)."""
+    project = await db.get(Project, project_id)
+    if not project or project.employer_id != user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    if project.status == "active":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete an active project with ongoing work. Complete or cancel it first.",
+        )
+
+    await db.delete(project)
+    await db.flush()
+    return {"status": "deleted", "project_id": str(project_id)}
+
+
 # ── Clarity Check ────────────────────────────────────────────────────────
 
 @router.post("/projects/{project_id}/clarify")
